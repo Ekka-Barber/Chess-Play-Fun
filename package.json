@@ -14,8 +14,10 @@
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
-    "chess.js": "^1.0.0",
     "chessops": "^0.15.1",
     "express": "^4.19.0"
+  },
+  "devDependencies": {
+    "chess.js": "^1.0.0"
   }
 }
