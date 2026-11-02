@@ -3,15 +3,18 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 // Requiring server.js constructs engine handles lazily (no process spawns) and loads the real engines.json.
-const { pickEngines } = require("../server");
+const { pickEngines, sweepPlan } = require("../server");
 
 test("engines.json registers five engines with truthful probed capabilities", () => {
   const entries = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "engines.json"), "utf8"));
   assert.equal(entries.length, 5);
   assert.equal(entries[0].id, "stockfish", "the calibrated engine leads the registry");
+  // CI clones have no engine binaries (setup:engines is a Windows post-clone step): when ANY binary is
+  // installed, ALL must be; a binary-less checkout is the documented fallback, not a broken registry.
+  const installed = entries.some((entry) => fs.existsSync(path.join(__dirname, "..", entry.path)));
   for (const entry of entries) {
     assert.match(entry.id, /^[a-z0-9]+$/, `${entry.id}: stable id`);
-    assert.ok(fs.existsSync(path.join(__dirname, "..", entry.path)), `${entry.id}: executable missing at ${entry.path}`);
+    if (installed) assert.ok(fs.existsSync(path.join(__dirname, "..", entry.path)), `${entry.id}: executable missing at ${entry.path}`);
   }
   const byId = Object.fromEntries(entries.map((entry) => [entry.id, entry]));
   // Probed against the shipped binaries (see server.js pickEngines): only Stockfish limits Elo; Obsidian has no
@@ -57,4 +60,19 @@ test("Stockfish fills capability gaps with a notice", () => {
   assert.equal(single.analysis.id, "stockfish");
   assert.equal(single.playing.id, "viridithas");
   assert.match(single.notices[0], /one line/);
+});
+
+test("sweepPlan asks every engine in standard games and skips only Chess960-incapable engines in 960", () => {
+  const stockfish = { id: "stockfish", name: "Stockfish 19", chess960: true, elo: true, multipv: true };
+  const obsidian = { id: "obsidian", name: "Obsidian 16.0", chess960: false, elo: false, multipv: true };
+  const viridithas = { id: "viridithas", name: "Viridithas 20.0.0", chess960: true, elo: false, multipv: false };
+  const registry = [stockfish, obsidian, viridithas];
+  const standard = sweepPlan(registry, false);
+  assert.deepEqual(standard.map((entry) => entry.engineId), ["stockfish", "obsidian", "viridithas"], "registry order is the colour slot");
+  assert.ok(standard.every((entry) => entry.ask === true), "a standard game asks every engine — even single-line ones (first choice only)");
+  const nine60 = sweepPlan(registry, true);
+  assert.equal(nine60[1].skipped, "chess960");
+  assert.equal(nine60[1].ask, undefined);
+  assert.equal(nine60[0].ask, true);
+  assert.equal(nine60[2].ask, true);
 });

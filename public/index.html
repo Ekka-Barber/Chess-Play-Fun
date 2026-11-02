@@ -37,7 +37,7 @@
           <div class="board-actions">
             <button id="flip" aria-label="Flip board" title="Flip board (F)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h15l-4-4M20 16H5l4 4"/></svg><span>Flip</span></button>
             <button id="undo" aria-label="Undo move" title="Take back one move"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5-5 5 5 5M4 10h9a6 6 0 0 1 6 6v3"/></svg><span>Undo</span></button>
-            <button id="coach" aria-label="Show engine arrows" aria-pressed="true" title="Show engine arrows"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M8 5h11v11"/></svg><span>Arrows</span></button>
+            <button id="coach" aria-label="Engine arrows" aria-pressed="true" title="Engine arrows: off → best lines → all five engines"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M8 5h11v11"/></svg><span>Arrows</span></button>
             <button id="reviewGame" aria-label="Deep review of the whole game" title="Deep review of the whole game (depth 20)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16M7 15l4-4 3 3 5-6"/></svg><span>Review</span></button>          </div>
           <div class="nav" role="group" aria-label="Move history navigation">
             <button id="navFirst" aria-label="First position" title="First position (Home)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14m12-14-7 7 7 7"/></svg></button>
@@ -72,6 +72,7 @@
           <h3 id="opening" class="opening">Starting position</h3>
           <div class="analysis-meta"><span id="turnChip">White to move</span><span id="powerChip">Stockfish 19 · Balanced</span><span><span id="depthChip">Depth —</span><span class="meta-separator">/</span><span id="npsChip">— MN/s</span></span></div>
           <div id="lines" class="lines" role="group" aria-label="Best continuations"><p class="empty-note">Finding the best continuations…</p></div>
+          <div id="engineVotes" class="engine-votes hidden"><h3>Engine votes <span>each engine's first choice · asked one at a time</span></h3><div id="engineVoteRows"></div><p id="engineVotesNote" class="muted"></p></div>
           <div id="threatBox" class="threats hidden"><h3>Opponent ideas <span>if you pass</span></h3><div id="threats"></div></div>
           <div id="tablebaseBox" class="tablebase hidden"><h3 id="tablebaseTitle">Tablebase <span>lichess tablebase · exact result</span></h3><div id="tablebaseBody"></div></div>
         </section>

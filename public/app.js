@@ -23,7 +23,7 @@ const BADGES = (() => {
   };
   return Object.fromEntries(Object.entries(glyphs).map(([type, [color, glyph]]) => [type, { color, svg: `<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="${color}"/>${glyph}</svg>` }]));
 })();
-let game, analysis, viewIndex = 0, flipped = false, arrowsOn = true, selected = null;
+let game, analysis, viewIndex = 0, flipped = false, arrowMode = 'best', selected = null;
 let busy = false, promoting = false, gesture = null, focusedSquare = 'e2';
 let pieces = new Map(), boardFen = '', panelFingerprint = '', pollTimer, analysisTimer, toastTimer, pauseTimer;
 let online = true, polling = false, themeKey = 'classic', collection = null, seenArchive = null, restoreId = null, reviewOpenedFor = null;
@@ -313,7 +313,7 @@ document.addEventListener('visibilitychange', () => {
     pauseTimer = setTimeout(() => { pauseSent = true; pausePost({ hidden: true, tab: TAB_ID }); }, 30000);
   } else {
     clearTimeout(pauseTimer);
-    if (pauseSent) { pauseSent = false; pausePost({ hidden: false, tab: TAB_ID }); }
+    if (pauseSent) { pauseSent = false; pausePost({ hidden: false, tab: TAB_ID }); scheduleSweep(); }
   }
 });
 window.addEventListener('pagehide', () => pausePost({ hidden: false, tab: TAB_ID }));
@@ -389,6 +389,29 @@ async function api(path, body) {
 // Pause pings ride fetch keepalive so the pagehide un-hide still reaches the server while the tab is closing.
 const pausePost = (body) => fetch('/api/pause', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true }).catch(() => {});
 
+// ---- five-engine coach view ("Engines" arrow mode) ----
+// The Arrows button cycles Off -> Best -> Engines (aria-pressed false/true/mixed). Engines mode asks the server,
+// strictly one engine at a time, for each registry engine's first choice at the position on screen
+// (POST /api/sweep); answers stream in through the analysis poll and render progressively. Leaving the mode
+// stops the server-side sweep.
+let sweepTimer = 0;
+function setArrowMode(mode) {
+  arrowMode = mode;
+  $('#coach').setAttribute('aria-pressed', mode === 'off' ? 'false' : mode === 'best' ? 'true' : 'mixed');
+}
+const stopSweepRemote = () => api('sweep', { stop: true }).catch(() => {});
+function scheduleSweep() {
+  if (arrowMode !== 'engines' || !game || retry) return;
+  clearTimeout(sweepTimer);
+  sweepTimer = setTimeout(() => {
+    if (!game || retry) return;
+    const fen = currentFen(), ply = viewIndex, current = analysis?.sweep;
+    // Re-post only when nothing already covers the on-screen position; 'paused' re-posts so an un-hide resumes it.
+    if (current && current.fen === fen && current.ply === ply && (current.phase === 'running' || current.phase === 'ready')) return;
+    api('sweep', { fen, atPly: ply, revision: game.revision }).then(() => { pollKick = true; }).catch(() => {});
+  }, 180);
+}
+
 // The registry loads once at startup; afterwards the displayed name tracks settings.engineId from every adopted state.
 function syncEngineName() {
   const id = game?.settings?.engineId ?? engineRegistry?.defaultId;
@@ -422,8 +445,9 @@ function adoptGame(next) {
   if (fresh) {
     legalByFen.clear(); hints.clear(); revealed.clear(); solved.clear();
     activeMoment = retry = bestShown = null;
-    arrowsOn = game.settings.mode !== 'engine';
-    $('#coach').setAttribute('aria-pressed', String(arrowsOn));
+    // A fresh engine game starts with arrows off, every other fresh game at best-lines — Engines mode is always
+    // re-asked for (its sweeps are paid work), so no game ever starts sweeping on its own.
+    setArrowMode(game.settings.mode === 'engine' ? 'off' : 'best');
     if (flipped !== game.settings.flipped) { flipped = game.settings.flipped; buildSquares(); }
     // A fresh game arms the clock chosen in the dialog; any other fresh game (restore/study, first
     // load) arrives with no pending choice, so it simply plays untimed.
@@ -557,6 +581,9 @@ function renderPanels(force = false) {
   const fen = currentFen(), turn = fen.split(' ')[1], last = game.moveLog.length, atTail = viewIndex === last;
   const s = game.settings, bot = botSide(s);
   const live = analysis?.fen === fen && (analysis.ply === undefined || analysis.ply === viewIndex) ? analysis : null;
+  // The five-engine sweep covering the on-screen position (same fen+ply gate as live analysis).
+  const sweepData = analysis?.sweep;
+  const sweepLive = sweepData && sweepData.fen === fen && sweepData.ply === viewIndex && sweepData.phase !== 'idle' ? sweepData : null;
   // Tab-hidden pause: the server freezes live analysis (governor.paused, mirrored by the frozen phase) until every
   // hidden tab is back, any user action runs, or a fresh page load says hello.
   const paused = Boolean(game.governor?.paused) || live?.phase === 'paused';
@@ -597,7 +624,7 @@ function renderPanels(force = false) {
   if (s.powerMode) $('#power').value = s.powerMode; // session-level: synced from the server on every poll
   if (s.onlineFeatures !== undefined) $('#online').value = s.onlineFeatures ? 'on' : 'off'; // session-level opt-in, same pattern
   updateHighlights();
-  drawArrows(retry ? null : live);
+  drawArrows(retry ? null : live, retry ? null : sweepLive);
   maybeFetchHint(live);
   maybeFetchOnline(); // opt-in answers for the position on screen; a no-op while the switch is off
   // Depth/nps tick every ~200ms while the engine thinks (server merges them into the live analysis), so they
@@ -621,7 +648,11 @@ function renderPanels(force = false) {
       onlineState.tablebase.data.moves.map((move) => [move.uci, move.san, move.category, move.dtz])]],
     onlineState.cloud && [onlineState.cloud.state, onlineState.cloud.data && [onlineState.cloud.data.depth, onlineState.cloud.data.pvs.map((pv) => [pv.whiteCp, pv.mate, pv.moves])]],
   ];
-  const fingerprint = JSON.stringify([game.revision, game.annotations, game.evalHist, game.reviewAll, game.deep.active, game.deep.done, game.computer, viewIndex, livePrint, arrowsOn, online, hints.get(hintKey), revealed.has(hintKey), retry, activeMoment, bestShown, bothSides, solved.size, paused, engineName, s.powerMode, s.onlineFeatures, onlinePrint]);
+  // Sweep answers join by content identity too — engineId, move, eval, skip/error, never depth — so a finished
+  // sweep rebuilds once while progressive answers rebuild as each engine lands.
+  const sweepPrint = sweepLive && [sweepLive.phase, sweepLive.terminal ?? null,
+    sweepLive.results.map((r) => [r.engineId, r.uci ?? null, r.text ?? null, r.displayTo ?? null, r.skipped ?? null, r.error ?? null])];
+  const fingerprint = JSON.stringify([game.revision, game.annotations, game.evalHist, game.reviewAll, game.deep.active, game.deep.done, game.computer, viewIndex, livePrint, arrowMode, sweepPrint, online, hints.get(hintKey), revealed.has(hintKey), retry, activeMoment, bestShown, bothSides, solved.size, paused, engineName, s.powerMode, s.onlineFeatures, onlinePrint]);
   if (!force && fingerprint === panelFingerprint) return;
   panelFingerprint = fingerprint;
   const thinking = !paused && (!live || ['thinking', 'idle', 'threats'].includes(live.phase));
@@ -676,6 +707,7 @@ function renderPanels(force = false) {
     threats.append(el);
   }
   renderTablebase(fen);
+  renderEngineVotes(sweepLive);
   renderCoach(hintKey);
   renderMoves(); renderGraph(); renderReview();
   // When a game ends the server starts its review; show it once per game.
@@ -888,31 +920,125 @@ function renderTablebase(fen) {
   body.replaceChildren(...tablebaseNodes(slot.data, fen));
 }
 
-function arrow(from, to, color, opacity, id, width = 12) {
-  const x = col(from) * 100 + 50, y = row(from) * 100 + 50, dx = (col(to) - col(from)) * 100, dy = (row(to) - row(from)) * 100;
-  const length = Math.hypot(dx, dy);
-  if (!length) return '';
+// Pure arrow geometry shared by the best-line arrows and the five-engine view: the seven-point polygon for a
+// move at a given half-width, in board units (0..800). proj maps a square to its centre, so tests run this
+// without a DOM.
+function arrowPoints(from, to, width, proj) {
+  const [x, y] = proj(from), [tx, ty] = proj(to);
+  const dx = tx - x, dy = ty - y, length = Math.hypot(dx, dy);
+  if (!length) return null;
   const ux = dx / length, uy = dy / length, px = -uy, py = ux;
   const sx = x + ux * 23, sy = y + uy * 23, ex = x + dx - ux * 36, ey = y + dy - uy * 36;
-  const points = [[sx + px * width, sy + py * width], [ex + px * width, ey + py * width], [ex + px * 25, ey + py * 25], [x + dx, y + dy], [ex - px * 25, ey - py * 25], [ex - px * width, ey - py * width], [sx - px * width, sy - py * width]].map((p) => p.join(',')).join(' ');
-  return `<polygon id="${id}" points="${points}" fill="${color}" opacity="${opacity}"/>`;
+  return [[sx + px * width, sy + py * width], [ex + px * width, ey + py * width], [ex + px * 25, ey + py * 25], [x + dx, y + dy], [ex - px * 25, ey - py * 25], [ex - px * width, ey - py * width], [sx - px * width, sy - py * width]];
 }
-function drawArrows(live) {
+const PROJECT = (sq) => [col(sq) * 100 + 50, row(sq) * 100 + 50];
+// The five-engine overlay planner, pure so test/ui-contrast.test.js can exercise it headlessly (like BADGES):
+// groups engines that agree on the same move, spaces the group perpendicular to the arrow (biased toward the
+// board centre, where the room is), and clamps the spacing so no translated point can leave the 0..800 viewBox —
+// an arrowhead's base already spans +/-25 units, so a naive offset clips heads off the a/h files. Slot =
+// registry index: colour arrowEng<slot+1>, width 10-slot — a non-colour cue that survives midnight's near-black
+// luminance cap, where hue alone cannot separate five engines.
+const ENGINE_ARROWS = (() => {
+  const CENTRE = 400, STEP = 20;
+  const plan = (results, theme, proj) => {
+    const groups = new Map();
+    results.forEach((r, slot) => {
+      if (!r.uci || r.skipped || r.error) return;
+      const key = `${r.from}>${r.displayTo || r.to}`;
+      const list = groups.get(key) || [];
+      list.push({ slot, engineId: r.engineId, from: r.from, to: r.displayTo || r.to });
+      groups.set(key, list);
+    });
+    const out = [];
+    for (const list of groups.values()) {
+      const { from, to } = list[0];
+      const [x0, y0] = proj(from), [x1, y1] = proj(to);
+      let px = -(y1 - y0), py = x1 - x0;
+      const norm = Math.hypot(px, py) || 1; px /= norm; py /= norm;
+      // Bias the offset direction toward the board centre (the roomy side).
+      if ((CENTRE - (x0 + x1) / 2) * px + (CENTRE - (y0 + y1) / 2) * py < 0) { px = -px; py = -py; }
+      const half = (list.length - 1) / 2;
+      let step = 0;
+      if (half) {
+        // Room for the widest arrow's bbox to travel along +/-perp before any corner leaves the viewBox.
+        const box = arrowPoints(from, to, 10, proj);
+        const xs = box.map((p) => p[0]), ys = box.map((p) => p[1]);
+        const room = (dx, dy) => {
+          let best = Infinity;
+          if (dx > 1e-9) best = Math.min(best, (800 - Math.max(...xs)) / dx); else if (dx < -1e-9) best = Math.min(best, -Math.min(...xs) / dx);
+          if (dy > 1e-9) best = Math.min(best, (800 - Math.max(...ys)) / dy); else if (dy < -1e-9) best = Math.min(best, -Math.min(...ys) / dy);
+          return best;
+        };
+        step = Math.max(0, Math.min(STEP, room(px, py) / half, room(-px, -py) / half));
+      }
+      list.forEach((member, k) => {
+        const points = arrowPoints(member.from, member.to, 10 - member.slot, proj);
+        if (!points) return;
+        const off = (k - half) * step;
+        out.push({ id: `engine-${member.engineId}`, fill: theme[`arrowEng${member.slot + 1}`], points: points.map(([X, Y]) => [X + px * off, Y + py * off]) });
+      });
+    }
+    return out;
+  };
+  return { plan };
+})();
+function arrow(from, to, color, opacity, id, width = 12) {
+  const points = arrowPoints(from, to, width, PROJECT);
+  if (!points) return '';
+  return `<polygon id="${id}" points="${points.map((p) => p.join(',')).join(' ')}" fill="${color}" opacity="${opacity}"/>`;
+}
+function drawArrows(live, sweepLive) {
   let content = '';
-  if (arrowsOn && live) {
-    // Solid per-theme fills: the old global fade (#305c40/#9f5949 at .23-.62 alpha) sat at 1.0-2.7:1
-    // against the squares. Every tint clears 3:1 (WCAG 1.4.11) on both square colours, so the top-3
-    // engine lines ladder width AND tint - rank 1 darkest/thickest, rank 2 mid, rank 3 lightest -
-    // rather than translucency, which would re-composite a fill below the floor. Threat arrows keep
-    // a single tint at two widths; test/ui-contrast.test.js pins the ratios and the ladder order.
+  if (arrowMode === 'engines' && sweepLive) {
+    // One arrow per engine's first choice, coloured by registry slot; agreement shows as parallel arrows, never
+    // a merge — each engine's answer stays traceable to its legend row. Opaque fills >=3:1 on both squares.
+    content = ENGINE_ARROWS.plan(sweepLive.results, THEMES[themeKey], PROJECT)
+      .map(({ id, fill, points }) => `<polygon id="${id}" points="${points.map((p) => p.join(',')).join(' ')}" fill="${fill}"/>`)
+      .join('');
+  } else if (arrowMode === 'best' && live) {
+    // Solid per-theme fills measured as composited (>=3:1 on both square colours, pinned by test): the top-3
+    // engine lines ladder width AND tint across each theme's whole legal contrast band — rank 1 darkest/thickest
+    // at ~0.93x the pure-black ceiling, rank 3 the lightest legal tint — so darker reads as stronger at a
+    // glance. Threat arrows sit at 7/5, widths no suggestion uses, so the families separate by size as well
+    // as hue (never by hue alone).
     const theme = THEMES[themeKey];
     const moveTints = [theme.arrowMove, theme.arrowMove2, theme.arrowMove3];
     live.lines.slice(0, 3).forEach((line, i) => { content += arrow(line.from, line.displayTo || line.to, moveTints[i], 1, `suggestion-${i}`, 12 - i * 2); });
-    live.threats.slice(0, 2).forEach((line, i) => { content += arrow(line.from, line.displayTo || line.to, theme.arrowThreat, 1, `threat-${i}`, 10 - i * 2); });
+    live.threats.slice(0, 2).forEach((line, i) => { content += arrow(line.from, line.displayTo || line.to, theme.arrowThreat, 1, `threat-${i}`, 7 - i * 2); });
   }
   if ($('#arrows').innerHTML !== content) $('#arrows').innerHTML = content;
 }
 function hotArrow(id, on) { document.getElementById(id)?.classList.toggle('hot', on); }
+
+// The Engines-mode legend: one row per registry engine — swatch in its arrow colour, SAN, eval, depth — plus
+// skipped (no Chess960 / game over), errored and pending rows, a running count, and the paused note. Rows are
+// buttons so hover/focus highlights that engine's arrow on the board.
+function renderEngineVotes(sweepLive) {
+  const box = $('#engineVotes');
+  const show = arrowMode === 'engines' && !retry && sweepLive;
+  box.classList.toggle('hidden', !show);
+  if (!show) return;
+  const rows = $('#engineVoteRows');
+  rows.replaceChildren();
+  sweepLive.results.forEach((r, slot) => {
+    const el = document.createElement('button');
+    const detail = r.error ? r.error : r.skipped ? (r.skipped === 'chess960' ? 'no Chess960' : r.skipped)
+      : r.uci ? `${r.san} · ${r.text}${r.depth ? ` · d${r.depth}` : ''}` : '…';
+    el.className = 'engine-vote' + ((r.skipped || !r.uci) && !r.error ? ' dim' : '');
+    el.innerHTML = `<span class="swatch" style="background:var(--arrow-eng${slot + 1})"></span><strong>${r.name}</strong><span class="vote-detail">${detail}</span>`;
+    el.setAttribute('aria-label', `${r.name}: ${detail}`);
+    el.onmouseenter = () => hotArrow(`engine-${r.engineId}`, true);
+    el.onmouseleave = () => hotArrow(`engine-${r.engineId}`, false);
+    el.onfocus = () => hotArrow(`engine-${r.engineId}`, true);
+    el.onblur = () => hotArrow(`engine-${r.engineId}`, false);
+    rows.append(el);
+  });
+  const done = sweepLive.results.filter((r) => r.uci || r.error || r.skipped).length;
+  text($('#engineVotesNote'), sweepLive.terminal ? 'Game over — no moves to suggest.'
+    : sweepLive.phase === 'paused' ? 'Paused while this tab was hidden.'
+    : sweepLive.phase === 'running' ? `${done} of ${sweepLive.results.length} engines answered…`
+    : 'Each engine asked for 300 ms, one at a time. Arrows also narrow left to right.');
+}
 
 // The move sheet is append-mostly, so it renders incrementally: while the logged plies still extend what is
 // on screen (same order and san), rows are reused, only new plies are appended, and per-ply state (current
@@ -1083,7 +1209,10 @@ function startRetry(ply) {
 // Shows the position before the move with the engine's arrow and line. It never changes the game.
 function showBest(ply) {
   activeMoment = ply; retry = null; bestShown = ply;
-  arrowsOn = true; $('#coach').setAttribute('aria-pressed', 'true');
+  // "Show best" always speaks the classic language: the rank-1 best-line arrow (theme.arrowMove), so the mode
+  // lands on Best from anywhere — its tint belongs to that ladder, not the five-engine palette.
+  if (arrowMode === 'engines') stopSweepRemote();
+  setArrowMode('best');
   setView(ply);
   renderPanels(true);
 }
@@ -1311,6 +1440,7 @@ function setView(index) {
       pollAnalysis();
     }).catch(() => {}), 180);
   }
+  scheduleSweep(); // no-op unless the Engines coach view is on for this position
 }
 
 async function mutate(action, body = {}, onError = (error) => notify(error.message, true)) {
@@ -1339,7 +1469,7 @@ function notify(message, error = false) {
 const POLL_ACTIVE = 700, POLL_IDLE = 5000, POLL_HIDDEN = 2500;
 let pollKick = true; // start fast: the first poll is the connection attempt
 const pollBusy = () => !game || !analysis || analysis.phase !== 'ready' || game.computer?.phase === 'thinking'
-  || game.deep.active || (game.reviewAll && !reviewStatus().complete);
+  || game.deep.active || (game.reviewAll && !reviewStatus().complete) || analysis.sweep?.phase === 'running';
 async function pollTick() {
   if (busy || promoting || gesture) { pollTimer = setTimeout(pollTick, 500); return; }
   polling = true;
@@ -1356,6 +1486,7 @@ async function pollTick() {
     if (changed) {
       viewIndex = wasTail ? game.moveLog.length : Math.min(viewIndex, game.moveLog.length);
       selected = null; retry = null;
+      scheduleSweep(); // an engine reply or undo moved the position: the coach view re-sweeps it
     }
     // While a retry attempt is on show, the board holds the scratch position.
     const shown = retry?.fen || currentFen();
@@ -1553,7 +1684,15 @@ $('#momentScope').onclick = () => { bothSides = !bothSides; renderPanels(true); 
 $('#reviewGame').onclick = $('#reviewButton').onclick = $('#deepButton').onclick = () => api('review', { deep: true })
   .then((next) => { adoptGame(next); selectTab($('#tabReview')); renderPanels(true); pollAnalysis(); })
   .catch((error) => notify(error.message, true));
-$('#coach').onclick = () => { arrowsOn = !arrowsOn; $('#coach').setAttribute('aria-pressed', String(arrowsOn)); renderPanels(true); };
+// The Arrows button cycles Off -> Best -> Engines. Entering Engines asks for a sweep of the position on
+// screen; leaving it stops any running sweep server-side.
+$('#coach').onclick = () => {
+  const next = arrowMode === 'off' ? 'best' : arrowMode === 'best' ? 'engines' : 'off';
+  if (arrowMode === 'engines' && next !== 'engines') stopSweepRemote();
+  setArrowMode(next);
+  if (next === 'engines') scheduleSweep();
+  renderPanels(true);
+};
 $('#retryEngine').onclick = () => api('retry', {}).then(() => pollAnalysis()).catch((error) => notify(error.message, true));
 $('#speed').onchange = async () => {
   try { await api('settings', { analysisMs: +$('#speed').value }); pollAnalysis(); }
@@ -1604,7 +1743,11 @@ document.addEventListener('keydown', (event) => {
 buildSquares();
 pollAnalysis();
 refreshCollection();
-// A freshly loaded tab is visible by definition: hello clears any pause left by a tab that crashed without pagehide.
-pausePost({ hidden: false, tab: TAB_ID, hello: true });
+// hello reports this tab's REAL visibility: a tab loaded in the background is hidden by definition
+// (visibilitychange never fires for it), so it registers its own pause instead of assuming visibility —
+// and pauseSent makes its first un-hide release that registration. Other tabs' pauses are never touched.
+const startHidden = document.visibilityState === 'hidden';
+pauseSent = startHidden;
+pausePost({ hidden: startHidden, tab: TAB_ID, hello: true });
 // One registry fetch; the name then follows settings.engineId on every adopted state.
 api('engines').then((data) => { engineRegistry = data; fillEngineSelect(); syncEngineName(); renderPanels(); }).catch(() => {});

@@ -38,7 +38,7 @@ let settings = {mode:'free',variant:'standard',humanColor:'w',engineSide:null,va
 // analysisTicket in the SAME synchronous turn — the app's own move flow already does this (the bump in
 // scheduleAnalysis, engine.interrupt() right after), and every new stop path (preempt, pause, settings, engine
 // switch) reuses that pairing so a cut-short search can never write the cache or set an error phase.
-const governor=createGovernor({mode:settings.powerMode,preempt:()=>scheduleAnalysis(tailPly())});
+const governor=createGovernor({mode:settings.powerMode,preempt:()=>{scheduleAnalysis(tailPly());stopSweep();}});
 const currentEngine=()=>ENGINES.find(entry=>entry.id===settings.engineId)||ENGINES[0];
 // Engines are used wherever their probed capabilities allow; Stockfish fills any gap and the UI is told why.
 // Probed against the shipped binaries: only Stockfish has UCI_Elo (1320-2800), Obsidian lacks UCI_Chess960,
@@ -60,6 +60,11 @@ const playingEngine = new Engine({threads:budgets.playing,hash:hashBudgets.playi
 // The deep whole-game review runs on its own process so browsing the game never interrupts its long searches; it
 // never takes the interactive slot, it is only thread-capped and runs at the mode's deep OS priority.
 const reviewEngine = new Engine({threads:budgets.deep,hash:hashBudgets.deep,exe:currentEngine().path,priority:PRIORITY[governor.deepPriority]});
+// The five-engine coach view ("Engines" arrow mode): one Engine per registry entry. Every sweep ask is gated
+// 'analysis' on the SAME interactive slot, so coach engines never search in parallel with each other or with live
+// analysis, and a game reply preempts them exactly like an analysis search. Hash stays small — a 300 ms ask
+// cannot fill more, and five live processes stay memory-bounded on the Surface budget.
+const coachEngines=ENGINES.map(entry=>new Engine({threads:budgets.analysis,hash:64,exe:entry.path,gate:()=>governor.acquire('analysis')}));
 const archive = createArchive(process.env.CHESS_ARCHIVE_DIR || path.join(__dirname,'Brilliant Moves'));
 // Online lookups cache under .cache/online (gitignored); the module only fetches after a route has checked
 // settings.onlineFeatures and the current-game FEN rule below, so nothing here can go online on its own.
@@ -71,9 +76,15 @@ let gameId=randomUUID(), revision=0, fens=[rules.startFen()], moveLog=[], annota
 let reviews=[], reviewAll=false, cache=new Map(), analysisTicket=0, computerTicket=0;
 // Free play: after a takeback Stockfish waits, so its move can really be taken back. Any move you make, or "Let Stockfish play", resumes it.
 let enginePaused=false;
-// Tabs hidden for 30 s pause live analysis only — never a game reply or the deep review — until every hidden tab is
-// back, any user action runs, or a fresh page load says hello. Keyed by the client's per-tab id.
-const pausedTabs=new Set();
+// Tabs hidden for 30 s pause live analysis only — never a game reply or the deep review — until every hidden tab
+// is back or any user action runs. Keyed by the client's per-tab id; entries carry a last-seen stamp and
+// self-expire (PAUSE_TTL) so a tab that crashes without pagehide cannot pause analysis forever. That healing
+// used to be the hello handler's job, but a hello that cleared the whole set wiped OTHER hidden tabs' pauses
+// (and a tab loaded in the background never fires visibilitychange to register itself), so hello now reports
+// only its own tab's visibility.
+const pausedTabs=new Map();
+const PAUSE_TTL=10*60*1000;
+function prunePausedTabs(now=Date.now()){for(const [tab,seen] of pausedTabs)if(now-seen>PAUSE_TTL)pausedTabs.delete(tab);}
 // Deep review: depth 20, the user's chosen depth (on this laptop about 3–16 s per position; depth 22 measured 6–51 s). Capped at 20 s each.
 const DEEP={depth:20,ms:20000};
 let deepJob=0, deep={active:false,startedAt:0};
@@ -84,6 +95,49 @@ function deepProgress() {
   return {...deep,depth:DEEP.depth,done,total:fens.length};
 }
 let computer={phase:'idle',error:null};
+// Five-engine sweep: each registry engine's first choice for one position, asked strictly one at a time through
+// the interactive slot. movetime-only (no depth target) — a comparative snapshot sized for the Surface budget.
+const SWEEP={ms:300};
+let sweepTicket=0, sweep={phase:'idle',results:[]}, sweepCache=new Map();
+// Pure planner (exported for tests): engines without Chess960 are skipped with a marker — a Stockfish fallback
+// would draw a second Stockfish arrow and misreport each engine's own first choice, unlike pickEngines, whose
+// fallback keeps a single answer correct.
+function sweepPlan(engines,nine60){return engines.map(entry=>entry.chess960||!nine60?{engineId:entry.id,name:entry.name,ask:true}:{engineId:entry.id,name:entry.name,skipped:'chess960'});}
+function stopSweep(){sweepTicket++;for(const coach of coachEngines)coach.interrupt();sweep={phase:'idle',results:[]};}
+function pauseSweep(){sweepTicket++;for(const coach of coachEngines)coach.interrupt();if(sweep.phase==='running')sweep={...sweep,phase:'paused'};}
+function runSweep(ply) {
+  if(pausedTabs.size)return;
+  if(!Number.isInteger(ply)||ply<0||ply>tailPly())return;
+  const fen=fens[ply], plan=sweepPlan(ENGINES,is960());
+  const terminal=terminalReport(ply);
+  if(terminal){sweep={fen,ply,phase:'ready',terminal:true,results:plan.map(entry=>entry.skipped?entry:{...entry,skipped:'terminal'})};return;}
+  const cached=sweepCache.get(ply);
+  if(cached&&cached.fen===fen){sweep=cached;return;}
+  const ticket=++sweepTicket, id=gameId;
+  sweep={fen,ply,phase:'running',results:plan};
+  for(const coach of coachEngines)coach.interrupt(); // same-turn invalidation before the new asks queue
+  let pending=plan.filter(entry=>entry.ask).length;
+  if(!pending){sweep={...sweep,phase:'ready'};sweepCache.set(ply,sweep);return;}
+  coachEngines.forEach((coach,i)=>{
+    const entry=plan[i];
+    if(!entry.ask)return;
+    coach.exec(async()=>{
+      const stale=()=>ticket!==sweepTicket||id!==gameId;
+      if(stale())return;
+      const raw=await coach.go(fen,1,SWEEP.ms,optionsFor(ply));
+      if(stale())return;
+      const line=raw.lines[0];
+      const result=line?(({uci,from,to,displayTo,san,text})=>({engineId:entry.engineId,name:entry.name,uci,from,to,displayTo,san,text,depth:raw.depth}))(mkLine(line,1,fen)):{engineId:entry.engineId,name:entry.name,error:'no move'};
+      if(stale())return;
+      sweep={...sweep,results:sweep.results.map((item,index)=>index===i?result:item)};
+      if(--pending===0){sweep={...sweep,phase:'ready'};sweepCache.set(ply,sweep);}
+    }).catch(error=>{
+      if(error?.code===SEARCH_CANCELLED||ticket!==sweepTicket||id!==gameId)return;
+      sweep={...sweep,results:sweep.results.map((item,index)=>index===i?{engineId:entry.engineId,name:entry.name,error:error.message}:item)};
+      if(--pending===0)sweep={...sweep,phase:'ready'};
+    });
+  });
+}
 let analysis={fen:null,ply:0,phase:'idle',depth:0,nps:0,lines:[],threats:[],opening:null};
 const tail=()=>fens.at(-1);
 const tailPly=()=>moveLog.length;
@@ -350,14 +404,16 @@ function resetGame(next) {
   // every process per pickEngines and schedules the fresh analysis itself.
   retireAll();
 }
-// Push the governor's budgets into all three engines. stopNow cuts a running analysis search (its caller has
+// Push the governor's budgets into all engines. stopNow cuts a running analysis search (its caller has
 // already bumped the ticket in this same turn); a live game reply or a 20 s deep search is never cut — those pick
-// up the new Threads/Hash at their next go via the engine's pre-search flush.
+// up the new Threads/Hash at their next go via the engine's pre-search flush. Coach engines retune too: they are
+// never cut (their 300 ms asks finish inside any mode switch) but adopt the new budgets at their next go.
 function retuneEngines(stopAnalysisNow=false) {
   const {budgets,hashBudgets}=governor;
   engine.retune({threads:budgets.analysis,hash:hashBudgets.analysis,priority:PRIORITY.below_normal,stopNow:stopAnalysisNow});
   playingEngine.retune({threads:budgets.playing,hash:hashBudgets.playing,priority:PRIORITY.below_normal});
   reviewEngine.retune({threads:budgets.deep,hash:hashBudgets.deep,priority:PRIORITY[governor.deepPriority]});
+  for(const coach of coachEngines)coach.retune({threads:budgets.analysis,hash:64,priority:PRIORITY.below_normal});
 }
 // Switch binaries: bump both tickets and stop the deep review BEFORE retiring, so the exit-time waiter rejections
 // ('Stockfish stopped.') hit stale guards and set no error phase; then rebuild both searches on the new engine.
@@ -366,6 +422,10 @@ function retuneEngines(stopAnalysisNow=false) {
 // Retiring even an unchanged engine costs one cold respawn (~200 ms) but clears its tables between games.
 function retireAll() {
   analysisTicket++;computerTicket++;stopDeepReview();
+  // The coach pool spans the whole registry (not settings.engineId), so it is never re-aimed — only invalidated:
+  // a changed game means fresh positions, and ucinewgame clears each engine's tables without a ~200 ms respawn.
+  sweepTicket++;for(const coach of coachEngines){coach.interrupt();coach.newGame();}
+  sweep={phase:'idle',results:[]};sweepCache=new Map();
   engine.retire();playingEngine.retire();reviewEngine.retire();
   const picks=pickEngines(currentEngine(),settings);
   engine.setExe(picks.analysis.path);reviewEngine.setExe(picks.analysis.path);playingEngine.setExe(picks.playing.path);
@@ -385,7 +445,7 @@ app.use(express.static(path.join(__dirname,'public')));
 const route=(handler)=>(req,res,next)=>Promise.resolve().then(()=>handler(req,res)).catch(next);
 function expectRevision(value){if(value!==undefined && value!==revision)throw Object.assign(new Error('The board changed. Try again from the refreshed position.'),{status:409});}
 app.get('/api/state',(req,res)=>res.json(gameInfo()));
-app.get('/api/analysis',(req,res)=>res.json({...analysis,game:gameInfo()}));
+app.get('/api/analysis',(req,res)=>res.json({...analysis,sweep:{...sweep},game:gameInfo()}));
 app.get('/api/engines',(req,res)=>res.json({engines:ENGINES.map(({id,name,chess960,elo,multipv})=>({id,name,chess960,elo,multipv})),defaultId:ENGINES[0].id}));
 app.get('/api/pgn',(req,res)=>res.type('application/x-chess-pgn').attachment('chess-game.pgn').send(rules.pgn(fens[0],moveLog,settings.variant)));
 app.post('/api/new',route((req,res)=>{
@@ -420,18 +480,21 @@ app.post('/api/settings',route((req,res)=>{
 app.post('/api/pause',route((req,res)=>{
   const {hidden,tab='(untabbed)',hello}=req.body||{};
   if(typeof hidden!=='boolean'||typeof tab!=='string'||!tab||(hello!==undefined&&typeof hello!=='boolean'))throw new Error('Invalid pause request.');
+  prunePausedTabs();
   if(hidden){
-    pausedTabs.add(tab);
+    pausedTabs.set(tab,Date.now());
     // Bump before stop, same synchronous turn (the unifying invariant): the cut-short search can never write the cache.
     analysisTicket++;engine.interrupt();
+    pauseSweep(); // an interrupted sweep parks as 'paused' (its partial results stay on screen); it is never left 'running'
     analysis={...analysis,phase:'paused'};
   }else{
-    // A freshly loaded page is visible by definition: hello clears the whole set (healing a tab that crashed
-    // without pagehide); a plain un-hide removes just this tab. Resume only once nothing is hidden, always at the
-    // live tail — the engine may have replied while the tab was hidden.
-    const removed=hello?pausedTabs.size>0:pausedTabs.delete(tab);
-    if(hello)pausedTabs.clear();
-    if(removed&&pausedTabs.size===0)scheduleAnalysis(tailPly());
+    // Un-hide — and hello, which reports the loading tab's OWN visibility (a tab loaded in the background is
+    // hidden, so it registers instead of wiping every other tab's pause) — releases only THIS tab; crashed tabs
+    // are healed by the TTL above. Resume only once nothing is hidden, always at the live tail: the engine may
+    // have replied while the tab was hidden.
+    const wasPaused=pausedTabs.size>0;
+    pausedTabs.delete(tab);
+    if(wasPaused&&pausedTabs.size===0)scheduleAnalysis(tailPly());
   }
   res.json({ok:true,paused:pausedTabs.size>0});
 }));
@@ -469,6 +532,18 @@ app.post('/api/online/tablebase',route(async(req,res)=>{
 app.post('/api/online/cloud-eval',route(async(req,res)=>{
   res.json(await online.cloudEval(requireOnlineGameFen(req.body)));
 }));
+// Five-engine coach view: one first-choice ask per registry engine for a position of this game (the same
+// membership rule as /api/analyze), run strictly sequentially through the interactive slot. {stop:true} cancels.
+app.post('/api/sweep',route((req,res)=>{
+  const body=req.body||{};
+  if(body.stop){stopSweep();return res.json({ok:true});}
+  pausedTabs.clear(); // asking for a sweep is a user action; it resumes the board like any other
+  expectRevision(body.revision);
+  const {fen,atPly}=body;
+  const ply=atPly===undefined?fens.lastIndexOf(fen):atPly;
+  if(typeof fen!=='string'||!Number.isInteger(ply)||ply<0||ply>tailPly()||fens[ply]!==fen)throw Object.assign(new Error('Choose a position in this game.'),{status:400,code:'BAD_POSITION'});
+  runSweep(ply);res.json({ok:true,fen,ply});
+}));
 app.post('/api/undo',route((req,res)=>{
   pausedTabs.clear();
   expectRevision(req.body?.revision);
@@ -479,8 +554,9 @@ app.post('/api/undo',route((req,res)=>{
   // Against Stockfish a takeback returns to your turn; free play takes back exactly one move and pauses Stockfish.
   if(settings.mode==='engine')while(target>0 && rules.status(fens,target).turn===computerColor())target--;
   else enginePaused=Boolean(settings.engineSide);
-  stopComputer();fens=fens.slice(0,target+1);moveLog=moveLog.slice(0,target);annotations=annotations.slice(0,target);evalHist=evalHist.slice(0,target+1);reviews=reviews.filter(index=>index<target);
+  stopComputer();stopSweep();fens=fens.slice(0,target+1);moveLog=moveLog.slice(0,target);annotations=annotations.slice(0,target);evalHist=evalHist.slice(0,target+1);reviews=reviews.filter(index=>index<target);
   for(const key of cache.keys())if(key>target)cache.delete(key);
+  for(const key of sweepCache.keys())if(key>target)sweepCache.delete(key);
   revision++;scheduleAnalysis();scheduleComputer();res.json(gameInfo());
 }));
 app.post('/api/engine-move',route((req,res)=>{pausedTabs.clear();expectRevision(req.body?.revision);enginePaused=false;scheduleComputer();res.json(gameInfo());}));
@@ -526,7 +602,11 @@ app.post('/api/restore',route(async(req,res)=>{
   const entry=await archive.get(req.body?.id);if(!entry)throw new Error('Saved game not found.');
   const nextFens=[entry.startFen],nextMoves=[];
   for(const record of entry.moves){const applied=rules.apply(nextFens.at(-1),rules.parseUciMove(nextFens.at(-1),record.uci,entry.variant),entry.variant);nextFens.push(applied.fen);nextMoves.push(applied.move);}
-  stopComputer();analysisTicket++;engine.interrupt();stopDeepReview();pausedTabs.clear();settings={...settings,mode:'free',engineSide:null,variant:entry.variant,seed:entry.seed??518};gameId=randomUUID();revision++;fens=nextFens;moveLog=nextMoves;annotations=nextMoves.map(()=>null);annotations[entry.ply-1]={...entry.annotation,symbol:'!!',archiveId:entry.id};evalHist=[];reviews=[];reviewAll=false;enginePaused=false;survival=false;cache=new Map();scheduleAnalysis();res.json(gameInfo());
+  pausedTabs.clear();settings={...settings,mode:'free',engineSide:null,variant:entry.variant,seed:entry.seed??518};gameId=randomUUID();revision++;fens=nextFens;moveLog=nextMoves;annotations=nextMoves.map(()=>null);annotations[entry.ply-1]={...entry.annotation,symbol:'!!',archiveId:entry.id};evalHist=[];reviews=[];reviewAll=false;enginePaused=false;survival=false;cache=new Map();
+  // A restored game can change the variant (and with it what the chosen engine is capable of): retireAll re-aims
+  // every process per pickEngines — exactly what resetGame does — instead of leaving engines aimed at the old
+  // game's shape. It also invalidates any sweep and its cache for the replaced game.
+  retireAll();res.json(gameInfo());
 }));
 app.get('/api/hint',(req,res)=>{
   const ply=Number(req.query.ply),report=cache.get(ply);
@@ -544,6 +624,6 @@ if(require.main===module) {
     if(process.platform==='win32' && process.env.CHESS_OPEN_BROWSER!=='0')exec(`start "" "http://localhost:${PORT}"`);
   });
   server.on('error',error=>{console.error(error.code==='EADDRINUSE'?`CHESS is already running at http://localhost:${PORT}`:error.message);process.exitCode=1;});
-  for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{engine.quit();playingEngine.quit();reviewEngine.quit();server.close();process.exit(0);});
+  for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{engine.quit();playingEngine.quit();reviewEngine.quit();for(const coach of coachEngines)coach.quit();server.close();process.exit(0);});
 }
-module.exports={app,engine,playingEngine,reviewEngine,governor,archive,online,timing,scoreText,prettyLine,mkLine,gameInfo,pickEngines};
+module.exports={app,engine,playingEngine,reviewEngine,governor,coachEngines,archive,online,timing,scoreText,prettyLine,mkLine,gameInfo,pickEngines,sweepPlan,prunePausedTabs,PAUSE_TTL};

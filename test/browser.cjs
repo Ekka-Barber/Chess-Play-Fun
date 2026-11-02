@@ -149,8 +149,14 @@ async function run() {
     await evaluate(`submitMove('e7','e5')`);await evaluate(`submitMove('g1','f3')`);await evaluate(`submitMove('b8','c6')`);await evaluate(`submitMove('f1','c4')`);
     await wait(`analysis?.fen===currentFen() && analysis.phase==='ready'`,25000);
     assert((await evaluate('analysis.depth'))>0);assert.equal(await evaluate('analysis.lines.length'),3);
-    await click('#coach');assert.equal(await evaluate(`document.querySelectorAll('#arrows polygon').length`),0);
-    await click('#coach');assert((await evaluate(`document.querySelectorAll('#arrows polygon').length`))>0);
+    // The Arrows button is a tri-state (Off -> Best -> Engines): off hides everything, best restores the
+    // ranked ladder, engines swaps in one first-choice arrow per registry engine (a real sequential sweep).
+    await click('#coach');assert.equal(await evaluate('arrowMode'),'engines');
+    await click('#coach');assert.equal(await evaluate(`document.querySelectorAll('#arrows polygon').length`),0,'off hides every arrow');
+    await click('#coach');assert((await evaluate(`document.querySelectorAll('#arrows polygon').length`))>0,'best draws the ranked ladder');
+    await click('#coach');await wait(`analysis?.sweep?.phase==='ready'`,60000);
+    assert.equal(await evaluate(`document.querySelectorAll('#arrows polygon').length`),await evaluate('engineRegistry.engines.length'),'one arrow per engine answered');
+    await click('#coach');await click('#coach');
     await evaluate(`document.querySelector('#speed').value='900';document.querySelector('#speed').onchange()`);
     await wait(`fetch('/api/analysis').then(r=>r.json()).then(d=>d.phase==='ready')`,25000);
     await wait(`analysis.phase==='ready' && document.querySelector('.line .play')`,25000);

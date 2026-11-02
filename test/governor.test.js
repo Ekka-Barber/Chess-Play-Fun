@@ -249,8 +249,13 @@ test('a powerMode change mid-search discards the cut-short result and re-searche
 test('pause follows the {hidden} contract: tab is optional, a present tab must be a non-empty string, and hidden/hello stay boolean', async () => {
   await post('pause', { hidden: 'yes', tab: 't' }, 400);
   await post('pause', { hidden: true }, 200); // the documented contract is a bare {hidden:boolean}
+  assert.equal((await state()).governor.paused, true);
   await post('pause', { hidden: true, tab: '' }, 400);
   await post('pause', { hidden: false, tab: 't', hello: 'no' }, 400);
+  // hello speaks only for its own tab: it releases THIS tab, never another tab's pause (the old
+  // clear-everything hello wiped other hidden tabs' pauses — the multi-tab audit finding).
+  assert.deepEqual(await post('pause', { hidden: false, tab: 't', hello: true }), { ok: true, paused: true });
+  await post('pause', { hidden: false }); // the synthetic '(untabbed)' key the bare {hidden:true} used
   assert.deepEqual(await post('pause', { hidden: false, tab: 't', hello: true }), { ok: true, paused: false });
 });
 test('pausing mid-analysis freezes the panel at paused (never error) and un-hide resumes', async () => {
@@ -315,11 +320,18 @@ test('any user action clears the pause set and analysis resumes', async () => {
   const report = await waitFor(async () => { const r = await analysisOf(); return r.phase === 'ready' && r.ply === 1 ? r : null; });
   assert.ok(report, 'analysis resumed at the new tail');
 });
-test('a fresh page load (hello) heals a stale hidden tab left by a crashed page', async () => {
+test('a crashed page\'s stale pause is healed by the TTL, never by another tab\'s hello', async () => {
+  const { prunePausedTabs, PAUSE_TTL } = require('../server');
   await post('new');
   await post('pause', { hidden: true, tab: 'crashed-without-pagehide' });
   assert.equal((await state()).governor.paused, true);
-  assert.deepEqual(await post('pause', { hidden: false, tab: 'fresh-page', hello: true }), { ok: true, paused: false });
+  // A fresh page load must NOT heal it — that whole-set wipe was the multi-tab bug. The entry self-expires.
+  await post('pause', { hidden: false, tab: 'fresh-page', hello: true });
+  assert.equal((await state()).governor.paused, true, 'hello reports only its own tab');
+  prunePausedTabs(Date.now() + PAUSE_TTL + 1);
+  assert.equal((await state()).governor.paused, false, 'the stale entry expired with the TTL');
+  await post('pause', { hidden: true, tab: 'probe' }); // a normal hide/un-hide cycle resumes analysis
+  await post('pause', { hidden: false, tab: 'probe' });
   const report = await waitFor(async () => { const r = await analysisOf(); return r.phase === 'ready' && r.ply === 0 ? r : null; });
-  assert.ok(report, 'analysis resumed once the hello cleared the whole set');
+  assert.ok(report, 'analysis resumed at the tail after the stale pause expired');
 });
