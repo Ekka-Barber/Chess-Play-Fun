@@ -10,7 +10,7 @@
     "setup:engines": "node scripts/setup-engines.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",

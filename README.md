@@ -17,7 +17,7 @@ A local chess workspace that respects your laptop.</p>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/node-%E2%89%A518-339933?style=flat-square&logo=node.js&logoColor=white" alt="node">
+  <img src="https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white" alt="node">
   <img src="https://img.shields.io/badge/express-4-000000?style=flat-square&logo=express&logoColor=white" alt="express">
   <img src="https://img.shields.io/badge/framework-none-vanilla_JS-8A2BE2?style=flat-square" alt="vanilla">
   <img src="https://img.shields.io/badge/engines-5_registered-1baca6?style=flat-square" alt="engines">
@@ -155,7 +155,7 @@ Answers land in a disk cache (`.cache/online/`): cloud evals expire after 24 h, 
 
 | Spec | Value |
 |---|---|
-| Stack | Node ≥18 · Express 4 · vanilla JS — zero build step, zero frameworks |
+| Stack | Node ≥20 · Express 4 · vanilla JS — zero build step, zero frameworks |
 | Engine I/O | UCI · lazy spawn · OS priority · idle quit · live retune on power-mode switch · sequential five-engine coach sweep through the interactive slot |
 | Safety | Revision + base-FEN conflict guards on every board-mutating request |
 | Tests | 107 deterministic (engine boundary stubbed, engineless on CI) · `npm test` |
