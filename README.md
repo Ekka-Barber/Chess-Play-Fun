@@ -12,6 +12,7 @@ A local chess workspace that respects your laptop.</p>
   <a href="https://github.com/Ekka-Barber/Chess-Play-Fun/network/members"><img src="https://img.shields.io/github/forks/Ekka-Barber/Chess-Play-Fun?style=flat-square&logo=github&color=8ab4f8" alt="forks"></a>
   <a href="https://github.com/Ekka-Barber/Chess-Play-Fun/issues"><img src="https://img.shields.io/github/issues/Ekka-Barber/Chess-Play-Fun?style=flat-square&logo=github&color=f28b82" alt="issues"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Ekka-Barber/Chess-Play-Fun?style=flat-square&color=81b64c" alt="license"></a>
+  <a href="https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Ekka-Barber/Chess-Play-Fun/ci.yml?style=flat-square&logo=githubactions&logoColor=white&label=CI" alt="CI"></a>
   <a href="https://github.com/Ekka-Barber/Chess-Play-Fun/commits"><img src="https://img.shields.io/github/last-commit/Ekka-Barber/Chess-Play-Fun?style=flat-square&color=a88865" alt="last commit"></a>
 </p>
 
@@ -20,7 +21,7 @@ A local chess workspace that respects your laptop.</p>
   <img src="https://img.shields.io/badge/express-4-000000?style=flat-square&logo=express&logoColor=white" alt="express">
   <img src="https://img.shields.io/badge/framework-none-vanilla_JS-8A2BE2?style=flat-square" alt="vanilla">
   <img src="https://img.shields.io/badge/engines-5_registered-1baca6?style=flat-square" alt="engines">
-  <img src="https://img.shields.io/badge/tests-98_passing-brightgreen?style=flat-square" alt="tests">
+  <img src="https://img.shields.io/badge/tests-107_passing-brightgreen?style=flat-square" alt="tests">
   <img src="https://img.shields.io/badge/Chess960-full_support-teal?style=flat-square" alt="chess960">
   <img src="https://img.shields.io/badge/a11y-enforced_by_test-96bc4b?style=flat-square" alt="a11y">
   <img src="https://img.shields.io/badge/telemetry-none-local_first-29443b?style=flat-square" alt="local first">
@@ -41,10 +42,19 @@ A local chess workspace that respects your laptop.</p>
 | **Watch the clock** | Optional — 3+2, 5+0, 10+0 or custom (1–180 min · Fischer increment); lives in this tab only (a reload drops it), and a takeback rewinds it to the exact snapshot |
 | **Spice it up** | **Random top-5** mode: the engine picks from its best ideas at random, with a *survival mode* that snaps to full strength when it gets into trouble |
 | **Improve** | Every move graded `Brilliant !!` → `Blunder ??` with a plain-language explanation, the refutation, and the better move |
-| **See the ideas** | Ranked arrows on the board: the engine's top-3 suggestions tinted and thinned by rank, plus the top-2 threats — the coach button toggles them (auto-off while an engine plays your side) |
+| **See the ideas** | Ranked arrows on the board: the engine's top-3 suggestions shade-laddered **darker = stronger → lighter = weaker** (each rung a verified ≥1.10× perceptual step that still clears 3:1 on both square colours), plus the top-2 threats |
+| **Compare the engines** | The Arrows button cycles **Off → Best → Engines**: in Engines mode every registered engine casts one coloured first-choice arrow — five opinions on one board, asked strictly one at a time, with a hoverable legend of each engine's move, eval and depth |
 | **Review** | Lichess-formula accuracy, a clickable winning-chances graph, key moments — and **Retry**: the board rewinds to your mistake and you must find the right move, judged to within 5% winning chances |
 | **Collect** | Every brilliant move auto-saved as a shareable 1024×1240 board image + PGN + metadata, in a restorable gallery |
 | **Be different** | Six board themes, drag & drop, click-to-move, full keyboard play, Chess960 (positions 0–959) |
+
+## 📸 The app, for real
+
+| Ranked best-line arrows — the shade ladder | Engine votes — five engines, five colours |
+|---|---|
+| <img src="assets/screens/app-analysis.png" width="100%" alt="The analysis board: top-3 suggestion arrows in a dark-to-light green shade ladder plus threat arrows, with the best-lines panel"> | <img src="assets/screens/app-engine-votes.png" width="100%" alt="The Engines coach view: one coloured first-choice arrow per engine with a legend of each engine's move and evaluation"> |
+
+Both captured from the running app (`scripts/capture-screens.mjs`) — arrows and legends are the real UI, not mock-ups.
 
 ## 🏆 The engine roster
 
@@ -83,6 +93,7 @@ Most analysis boards assume a workstation. This one was designed on — and meas
 - **Idle engines quit themselves** after 5 minutes and respawn on demand in ~200 ms
 - **Hide the tab 30 s → live analysis pauses** (never a game reply, never a running review)
 - **Deep review never blocks the board** — browse the game while depth-20 crunches in the background
+- **The Engines coach view queues like analysis** — its five 300 ms asks take the same interactive slot, one engine at a time, and a game reply preempts them instantly
 
 ## 🚀 Quick start
 
@@ -90,11 +101,11 @@ Most analysis boards assume a workstation. This one was designed on — and meas
 git clone https://github.com/Ekka-Barber/Chess-Play-Fun.git
 cd Chess-Play-Fun
 npm install
-npm run setup:engines   # fetches all engine binaries from their official releases (~240 MB, once)
+npm run setup:engines   # fetches every engine binary from its official release (~300 MB, once)
 npm start               # → http://localhost:4655
 ```
 
-The setup script is idempotent — re-run any time to repair a missing binary. It grabs AVX2+BMI2 builds (any CPU from ~2013); pinned sources are in [Credits](#-credits--licenses).
+**Windows only for now** — the setup script fetches Windows engine builds (AVX2+BMI2, any CPU from ~2013) and the launcher is a `.bat`. The setup script is idempotent — re-run any time to repair a missing binary. Every download is pinned to an exact release tag (`sf_19`, `14`, `v16.0`, `b-v8.0.0`, `v20.0.0`); sources are in [Credits](#-credits--licenses).
 
 ### 🌐 Online features (off by default)
 
@@ -134,7 +145,7 @@ Answers land in a disk cache (`.cache/online/`): cloud evals expire after 24 h, 
 |---|---|
 | Themes | 6 (walnut · forest · ocean · ivory · midnight · rosewood), remembered |
 | Clocks | Off by default · 3+2 / 5+0 / 10+0 / custom 1–180 min + 0–60 s Fischer · this tab only — never posted, a reload drops it · takeback rewinds to the exact snapshot |
-| Ranked arrows | Top-3 engine suggestions tinted & thinned by rank · top-2 threats · coach-button toggle · auto-off while an engine plays your side |
+| Arrows | Tri-state Arrows button: **Off → Best → Engines** · Best = top-3 suggestions on a verified darker-stronger shade ladder + top-2 threats at their own widths · Engines = one coloured first-choice arrow per registered engine (sequential 300 ms asks, hover legend, agreement shown as parallel arrows; engines without Chess960 are marked, never faked) · auto-off while an engine plays your side |
 | Input | Drag & drop · click-to-move · touch · full keyboard |
 | Keyboard | Arrows move · <kbd>Enter</kbd>/<kbd>Space</kbd> select · <kbd>Esc</kbd> cancel · <kbd>←</kbd>/<kbd>→</kbd> history · <kbd>Home</kbd>/<kbd>End</kbd> ends · <kbd>F</kbd> flip |
 | Accessibility | Labelled grid · roving tabindex · visible focus · reduced motion · contrast enforced by a test that parses the source |
@@ -145,40 +156,46 @@ Answers land in a disk cache (`.cache/online/`): cloud evals expire after 24 h, 
 | Spec | Value |
 |---|---|
 | Stack | Node ≥18 · Express 4 · vanilla JS — zero build step, zero frameworks |
-| Engine I/O | UCI · lazy spawn · OS priority · idle quit · live retune on power-mode switch |
-| Safety | Revision + base-FEN conflict guards on every mutating request |
-| Tests | 98 deterministic (engine boundary stubbed) · `npm test` |
+| Engine I/O | UCI · lazy spawn · OS priority · idle quit · live retune on power-mode switch · sequential five-engine coach sweep through the interactive slot |
+| Safety | Revision + base-FEN conflict guards on every board-mutating request |
+| Tests | 107 deterministic (engine boundary stubbed, engineless on CI) · `npm test` |
 
 ## 🧪 Testing
 
 ```bash
-npm test   # 98 tests: rules, Chess960 castling, clocks, grading, governor, engines, online lookups, contrast
+npm test   # 107 tests: rules, Chess960 castling, clocks, grading, governor, engines, online lookups, the five-engine sweep, contrast
 ```
 
-Covers chess rules (en passant, underpromotion, Chess960 castling), stale-request safety, engine turn handling, review and retry judging, Brilliant detection, the governor's slot and idle-quit behaviour, engine capability fallbacks, clock math (increments, flags, takeback rewinds) and the online opt-in with its never-a-proxy guard — and a test that **recomputes WCAG contrast ratios from the source**, so a theme change can never quietly ship an invisible overlay.
+Covers chess rules (en passant, underpromotion, Chess960 castling), stale-request safety, engine turn handling, review and retry judging, Brilliant detection, the governor's slot and idle-quit behaviour, engine capability fallbacks, clock math (increments, flags, takeback rewinds), the online opt-in with its never-a-proxy guard, the five-engine sweep (membership and revision guards, terminal positions, pause/stop/restore lifecycles), and a test that **recomputes WCAG contrast ratios from the source** — every overlay measured as composited, the arrow ladder's perceptual steps floored at 1.10×, and the five engine hues' pairwise separation enforced, so a theme change can never quietly ship an invisible or indistinguishable overlay.
 
 ## 🗺️ Roadmap
 
-- [ ] Persistence — games, analyses and annotations to SQLite
-- [ ] Lichess integration — *partially done*: opt-in tablebase + cloud-eval lookups are in; importing your own games for automatic review is still pending
-- [ ] Maia opponents — human-like neural nets at 1100–1900 Elo
-- [ ] Mistake book — your blunders as spaced-repetition puzzles
-- [ ] Sequential multi-engine consensus analysis
+Ordered by improvement-per-effort for a personal training system:
+
+- [ ] PGN import — paste or open any game and review it with the existing coach/deep-review pipeline (the cheapest unblocker; everything below feeds on stored games)
+- [ ] Persistence — a file-based game store (plus autosave of the live game) before any database dependency
+- [ ] Lichess integration — *partially done*: opt-in tablebase + cloud-eval lookups are in; importing your own games for automatic review follows the store
+- [ ] Mistake book — your blunders as spaced-repetition puzzles (Leitner due-dates first, FSRS tuning once there is usage data)
+- [ ] Feel & feedback — synthesized move/capture/check sounds, session stats, drill streaks
+- [ ] Maia opponents — human-like neural nets at 1100–1900 Elo (last: it changes opponents, not the feedback loop)
+- [x] ~~Sequential multi-engine analysis~~ — **first slice shipped**: the Engines coach view asks all five engines, one at a time, and colours their first choices
 
 ## 📁 Project layout
 
 ```
-server.js                 Express app: game state, engine scheduling, review pipeline
+server.js                 Express app: game state, engine scheduling, review pipeline, the five-engine sweep
 lib/governor.js           Power modes, thread budgets, the one-search interactive slot
 lib/engine.js             UCI wrapper: lazy spawn, OS priority, idle quit, live retune
 lib/rules.js              Legal moves, SAN, PGN via chessops (standard + Chess960)
 lib/tutor.js              Move grading, explanations, hints, sacrifice detection
 lib/archive.js            Brilliant-move collection (PNG via resvg, PGN, metadata)
-public/                   Vanilla-JS board UI: themes, panels, review, gallery
-scripts/setup-engines.js  Fetches every engine binary from official releases
-test/                     98 deterministic Node tests (engine boundary stubbed)
+lib/online.js             Opt-in lichess lookups: tablebase + cloud eval, disk-cached
+public/                   Vanilla-JS board UI: themes, panels, review, gallery, engine votes
+scripts/setup-engines.js  Fetches every engine binary from its pinned official release
+scripts/capture-screens.mjs  Captures the README screenshots over Chromium's DevTools protocol
+test/                     107 deterministic Node tests (engine boundary stubbed, engineless on CI)
 engines.json              The engine registry and its probed capabilities
-assets/                   Poster art (see the gallery below)
+assets/                   Poster art + real screenshots (assets/screens)
 ```
 
 ## 🎨 Poster gallery
@@ -200,7 +217,7 @@ The hero at the top was generated with **GPT Image 2.5**. Three alternate direct
 
 This project's code is [MIT](LICENSE). It stands on excellent open-source work:
 
-**Engines** — fetched by the setup script, each under its own license (GPL-3.0 for Obsidian and PlentyChess; see their repos): [Stockfish](https://github.com/official-stockfish/Stockfish) · [Berserk](https://github.com/jhonnold/berserk) by Jamie Whiting · [Obsidian](https://github.com/gab8192/Obsidian) · [PlentyChess](https://github.com/Yoshie2000/PlentyChess) by Yoshie2000 · [Viridithas](https://github.com/cosmobobak/viridithas) by Cosmo Bobak.
+**Engines** — fetched by the setup script, never bundled, each under its own license (GPL-3.0 for Stockfish, Berserk, Obsidian and PlentyChess; Viridithas 20.0.0 is MIT — its repository has since moved to AGPL-3.0): [Stockfish](https://github.com/official-stockfish/Stockfish) · [Berserk](https://github.com/jhonnold/berserk) by Jamie Whiting · [Obsidian](https://github.com/gab8192/Obsidian) · [PlentyChess](https://github.com/Yoshie2000/PlentyChess) by Yoshie2000 · [Viridithas](https://github.com/cosmobobak/viridithas) by Cosmo Bobak.
 
 **Libraries & assets:** [chessops](https://github.com/niklasf/chessops) (move generation) · [Express](https://expressjs.com/) · the Cburnett piece set (`public/pieces/LICENSE.txt`) · the Sentient typeface (SIL Open Font License) · accuracy and winning-chances formulas published by [lichess.org](https://lichess.org) · hero art generated with GPT Image 2.5 via [Higgsfield](https://higgsfield.ai).
 
