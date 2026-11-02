@@ -10,6 +10,9 @@
 # Local state and generated collections
 /Brilliant Moves/
 
+# Online lookup disk cache (immutable tablebase entries, day-TTL cloud evals)
+/.cache/
+
 # Dev artifacts
 /.before-fix/
 /.zcode/

@@ -121,6 +121,13 @@ test('failed writes produce descriptive error and no committed entry', async (t)
   assert.equal(await fs.readFile(archive.rootDir, 'utf8'), 'Keep this pre-existing file.');
 });
 
+test('a plain file squatting on an entry name is not found, not a read failure', async (t) => {
+  const archive = await temporaryArchive(t), input = entry();
+  await fs.mkdir(archive.rootDir, { recursive: true });
+  await fs.writeFile(path.join(archive.rootDir, `${input.gameId}-1`), 'not a directory');
+  await assert.rejects(archive.get(`${input.gameId}-1`), { code: 'NOT_FOUND' }); // ENOTDIR now maps alongside ENOENT
+});
+
 test('render and mid-write failures never leave a partial gallery entry', async (t) => {
   const archive = await temporaryArchive(t);
   const render = t.mock.method(Resvg.prototype, 'render', () => { throw new Error('Synthetic render failure'); });

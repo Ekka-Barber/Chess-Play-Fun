@@ -1,0 +1,42 @@
+[
+  {
+    "id": "stockfish",
+    "name": "Stockfish 19",
+    "path": "stockfish/stockfish-windows-x86-64-universal.exe",
+    "chess960": true,
+    "elo": true,
+    "multipv": true
+  },
+  {
+    "id": "berserk",
+    "name": "Berserk 14",
+    "path": "engines/berserk/berserk-14-avx2-pext.exe",
+    "chess960": true,
+    "elo": false,
+    "multipv": true
+  },
+  {
+    "id": "obsidian",
+    "name": "Obsidian 16.0",
+    "path": "engines/obsidian/Obsidian160-avx2-pext.exe",
+    "chess960": false,
+    "elo": false,
+    "multipv": true
+  },
+  {
+    "id": "plentychess",
+    "name": "PlentyChess 8.0.0",
+    "path": "engines/plentychess/PlentyChess-8.0.0-windows-avx2.exe",
+    "chess960": true,
+    "elo": false,
+    "multipv": true
+  },
+  {
+    "id": "viridithas",
+    "name": "Viridithas 20.0.0",
+    "path": "engines/viridithas/viridithas-20-win-x86-64-v3.exe",
+    "chess960": true,
+    "elo": false,
+    "multipv": false
+  }
+]

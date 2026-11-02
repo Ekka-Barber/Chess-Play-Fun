@@ -1,6 +1,6 @@
 @font-face { font-family: Sentient; src: url('fonts/Sentient-Medium.woff2') format('woff2'); font-weight: 500; font-display: swap; }
 /* Defaults match the Classic walnut theme; app.js overwrites them from themes.js. */
-:root { color-scheme: dark; --bg: #24231f; --surface: #2f2e29; --raised: #414039; --text: #f1eee5; --muted: #c4c0b3; --light: #ede2cd; --dark: #a78162; --accent: #ded5b9; --ink: #24251f; --danger: #f1b4a1; --selected: #d8d899; --coord-light: #101710; --coord-dark: #101710; --arrow-move: #163520; --arrow-threat: #4d2019; --target: #221a12; --header: color-mix(in srgb, var(--bg) 82%, #000); --line: color-mix(in srgb, var(--text) 12%, transparent); --board-size: min(58vw,64vh,650px); --ease: cubic-bezier(.16,1,.3,1); font-family: 'Segoe UI',system-ui,sans-serif; font-synthesis: none; }
+:root { color-scheme: dark; --bg: #24231f; --surface: #2f2e29; --raised: #414039; --text: #f1eee5; --muted: #c4c0b3; --light: #ede2cd; --dark: #a78162; --accent: #ded5b9; --ink: #24251f; --danger: #f1b4a1; --selected: #d8d899; --coord-light: #101710; --coord-dark: #101710; --arrow-move: #163520; --arrow-move2: #034111; --arrow-move3: #034612; --arrow-threat: #4d2019; --target: #221a12; --header: color-mix(in srgb, var(--bg) 82%, #000); --line: color-mix(in srgb, var(--text) 12%, transparent); --board-size: min(58vw,64vh,650px); --ease: cubic-bezier(.16,1,.3,1); font-family: 'Segoe UI',system-ui,sans-serif; font-synthesis: none; }
 :root[data-scheme='light'] { --header: var(--surface); }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); min-width: 300px; }
@@ -46,6 +46,12 @@ h1 { margin: 0; font-family: Sentient,Georgia,serif; font-size: 29px; line-heigh
 .player-row strong { font-size: 13px; font-weight: 600; }
 .player-row div span { color: var(--muted); font-size: 12px; }
 .player-turn { font-size: 12px; color: var(--accent); margin-left: auto; }
+/* Optional chess clock (public/clock.js holds the math): tabular figures so the digits never jitter
+   when tenths appear. The side to move is the bright readout; low time is danger-coloured AND has
+   already switched format to tenths, so the warning is never carried by colour alone. */
+.player-clock { padding: 2px 9px; border-radius: 5px; background: var(--raised); color: var(--muted); font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.player-clock.running { color: var(--text); }
+.player-clock.low,.player-clock.out { color: var(--danger); }
 .board-area { display: grid; grid-template-columns: 9px minmax(0,1fr); gap: 11px; }
 .board { width: 100%; aspect-ratio: 1; position: relative; touch-action: none; user-select: none; -webkit-user-select: none; border-radius: 3px; isolation: isolate; }
 .squares,.pieces,.arrows { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -192,6 +198,28 @@ select { cursor: pointer; }
 .empty-note { margin: 18px 0; color: var(--muted); font-size: 12px; line-height: 1.6; }.empty-note.error { color: var(--danger); }
 .threats { margin-top: 18px; }.threats h3 { font-size: 12px; font-weight: 600; color: var(--danger); margin: 0 0 9px; }.threats h3 span { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 5px; }
 .threat { display: grid; grid-template-columns: 18px 48px 1fr; gap: 7px; padding: 6px 0; font-size: 12px; align-items: baseline; }.threat .rank { color: var(--muted); font-size: 12px; }.threat .ev { font-variant-numeric: tabular-nums; color: var(--danger); }.threat .pv { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); }
+/* The settings row now carries two labelled controls (Analysis time, Online): each pair stays glued and
+   the row wraps instead of spilling on the narrowest panel. */
+.engine-settings { flex-wrap: wrap; gap: 6px 12px; }
+.engine-setting { display: flex; align-items: center; gap: 8px; }
+/* Cloud line: a local line's grid with a tinted row, a cloud glyph in the rank cell and the source in the
+   sub-line, so the borrowed evaluation can never pass for a local Stockfish result. */
+.line.cloud { margin: 0 -6px; padding: 5px 6px; border-radius: 5px; background: color-mix(in srgb, var(--raised) 45%, var(--surface)); }
+.line.cloud .rank { display: grid; place-items: center; }
+.line.cloud .rank svg { width: 15px; height: 15px; fill: currentColor; }
+/* Tablebase block speaks the panel's language: a threats-style heading, one verdict line, compact rows. */
+.tablebase { margin-top: 18px; }
+.tablebase h3 { font-size: 12px; font-weight: 600; margin: 0 0 8px; }
+.tablebase h3 span { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 5px; }
+.tb-verdict { margin: 0 0 4px; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tb-facts { color: var(--muted); font-weight: 400; font-size: 12px; }
+.tb-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }.tb-hint.error { color: var(--danger); }
+.tb-moves { display: grid; gap: 1px; }
+.tb-move { display: grid; grid-template-columns: 52px 1fr auto; gap: 8px; align-items: baseline; padding: 3px 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.tb-move strong { font-size: 13px; font-weight: 600; }
+.tb-move.win { --tb: #4d7a22; }.tb-move.loss { --tb: #fa412d; }.tb-move.draw { --tb: var(--muted); }
+.tb-cat { color: color-mix(in srgb, var(--tb, var(--muted)) 72%, var(--text)); font-weight: 700; }
+.tb-dtz { color: var(--muted); }
 .move-columns { display: grid; grid-template-columns: 30px 1fr 1fr; color: var(--muted); font-size: 12px; margin: 17px 0 5px; }.move-columns span:not(:first-child) { padding-left: 8px; }
 .moves { list-style: none; padding: 0; margin: 0 -6px; max-height: 320px; overflow-y: auto; scrollbar-color: var(--muted) transparent; scrollbar-width: thin; font-variant-numeric: tabular-nums; }
 .moves li { display: grid; grid-template-columns: 36px minmax(0,1fr) minmax(0,1fr); align-items: center; }.moves li:nth-child(even) { background: color-mix(in srgb, var(--raised) 45%, var(--surface)); border-radius: 3px; }.moves .n { color: var(--muted); padding-left: 6px; font-size: 12px; }

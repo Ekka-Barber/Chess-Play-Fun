@@ -1,8 +1,9 @@
 // Pins the WCAG contrast floors for the brilliant badge family and the board-overlay layer
 // (finding 3 + polish (a)): badge glyphs >=3:1 against their disc (1.4.11 graphics), the
-// brilliant-count text >=4.5:1 (it is 11px text), and each theme's arrows / legal-move dot /
-// capture ring >=3:1 against BOTH square colours. Sources are parsed - not redeclared - so a
-// retuned hex in app.js, style.css, themes.js or lib/archive.js fails here instead of shipping.
+// brilliant-count text >=4.5:1 (it is 11px text), and each theme's three move-arrow tints
+// (plus their darkest-to-lightest rank ladder), threat arrows, legal-move dot / capture ring
+// >=3:1 against BOTH square colours. Sources are parsed - not redeclared - so a retuned hex in
+// app.js, style.css, themes.js or lib/archive.js fails here instead of shipping.
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -73,15 +74,25 @@ test("the archive PNG brilliant badge matches the app badge and keeps >=3:1", ()
   assert.ok(ratio >= 3, `archive badge ${ink} on ${disc} is ${ratio.toFixed(2)}:1, needs 3:1`);
 });
 
-test("every theme's arrows, legal-move dot and capture ring clear 3:1 on both square colours", () => {
+test("every theme's three move-arrow tints, threat arrows, dot and ring clear 3:1 on both square colours", () => {
   for (const [key, theme] of Object.entries(themes)) {
-    for (const overlay of ["arrowMove", "arrowThreat", "target"]) {
+    for (const overlay of ["arrowMove", "arrowMove2", "arrowMove3", "arrowThreat", "target"]) {
       assert.ok(/^#[0-9a-f]{6}$/i.test(theme[overlay] ?? ""), `theme ${key} is missing a ${overlay} colour`);
       for (const square of ["light", "dark"]) {
         const ratio = contrast(channels(theme[overlay]), channels(theme[square]));
         assert.ok(ratio >= 3, `${key} ${overlay} ${theme[overlay]} on ${square} ${theme[square]} is ${ratio.toFixed(2)}:1, needs 3:1`);
       }
     }
+  }
+});
+
+test("the three move-arrow tints ladder darkest (rank 1) to lightest (rank 3) in every theme", () => {
+  // 3:1 makes each tint visible; the strict luminance climb is what makes them read as a
+  // hierarchy, so a theme edit cannot flatten ranks 2-3 back into rank 1 either.
+  for (const [key, theme] of Object.entries(themes)) {
+    const [rank1, rank2, rank3] = [theme.arrowMove, theme.arrowMove2, theme.arrowMove3].map((hex) => luminance(channels(hex)));
+    assert.ok(rank1 < rank2 && rank2 < rank3,
+      `${key}: move tints must climb by rank, got L ${rank1.toFixed(3)} / ${rank2.toFixed(3)} / ${rank3.toFixed(3)}`);
   }
 });
 
@@ -93,11 +104,11 @@ test("overlays stay wired to the theme palette instead of hard-coded washes", ()
   assert.ok(!/target::after[^}]*rgb\(/i.test(styleCss), "target overlays must not fall back to translucent black");
   // :root carries the Classic defaults, so the no-JS first paint matches themes.classic exactly.
   const root = cssRule(":root");
-  for (const [cssVar, themeKey] of [["--arrow-move", "arrowMove"], ["--arrow-threat", "arrowThreat"], ["--target", "target"]]) {
+  for (const [cssVar, themeKey] of [["--arrow-move", "arrowMove"], ["--arrow-move2", "arrowMove2"], ["--arrow-move3", "arrowMove3"], ["--arrow-threat", "arrowThreat"], ["--target", "target"]]) {
     assert.equal(cssProp(root, cssVar)?.toLowerCase(), themes.classic[themeKey].toLowerCase(), `:root ${cssVar} must match the classic theme`);
   }
   const arrows = (appJs.match(/function drawArrows\(live\) \{[\s\S]*?\n\}/)?.[0] ?? "").replace(/\/\/.*$/gm, "");
-  assert.ok(arrows.includes("theme.arrowMove") && arrows.includes("theme.arrowThreat"),
+  assert.ok(["theme.arrowMove", "theme.arrowMove2", "theme.arrowMove3", "theme.arrowThreat"].every((token) => arrows.includes(token)),
     "drawArrows must colour arrows from the active theme");
   assert.ok(!/#[0-9a-f]{6}/i.test(arrows), "drawArrows must not hard-code arrow colours");
   // A translucent hot state would re-composite the fill below 3:1; emphasis must stay opaque.

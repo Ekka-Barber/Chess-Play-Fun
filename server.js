@@ -8,6 +8,7 @@ const { Engine, SEARCH_CANCELLED, PRIORITY } = require('./lib/engine');
 const { createGovernor } = require('./lib/governor');
 const { assessMove, hint, expectedPoints } = require('./lib/tutor');
 const { createArchive } = require('./lib/archive');
+const { createOnline } = require('./lib/online');
 const THEMES = require('./public/themes');
 const OPENINGS = JSON.parse(fs.readFileSync(path.join(__dirname,'data','openings.json'),'utf8'));
 const PORT = process.env.PORT || 4655;
@@ -30,7 +31,9 @@ const ENGINES=loadEngines();
 
 // variety: free-play Stockfish picks randomly from its top moves instead of always playing the best (opt-in).
 // powerMode and engineId are session-level settings owned by /api/settings; they tune the governor, not the game.
-let settings = {mode:'free',variant:'standard',humanColor:'w',engineSide:null,variety:false,strength:50,seed:518,theme:'classic',analysisMs:1600,flipped:false,powerMode:'balanced',engineId:ENGINES[0].id};
+// onlineFeatures is the same kind of session switch and defaults to OFF: the app is local-first and only talks
+// to lichess after the user opts in.
+let settings = {mode:'free',variant:'standard',humanColor:'w',engineSide:null,variety:false,strength:50,seed:518,theme:'classic',analysisMs:1600,flipped:false,powerMode:'balanced',engineId:ENGINES[0].id,onlineFeatures:false};
 // Unifying invariant (mirrored in lib/engine.js): any path that cuts an analysis search short must bump
 // analysisTicket in the SAME synchronous turn — the app's own move flow already does this (the bump in
 // scheduleAnalysis, engine.interrupt() right after), and every new stop path (preempt, pause, settings, engine
@@ -58,6 +61,9 @@ const playingEngine = new Engine({threads:budgets.playing,hash:hashBudgets.playi
 // never takes the interactive slot, it is only thread-capped and runs at the mode's deep OS priority.
 const reviewEngine = new Engine({threads:budgets.deep,hash:hashBudgets.deep,exe:currentEngine().path,priority:PRIORITY[governor.deepPriority]});
 const archive = createArchive(process.env.CHESS_ARCHIVE_DIR || path.join(__dirname,'Brilliant Moves'));
+// Online lookups cache under .cache/online (gitignored); the module only fetches after a route has checked
+// settings.onlineFeatures and the current-game FEN rule below, so nothing here can go online on its own.
+const online = createOnline({ cacheDir: process.env.CHESS_ONLINE_CACHE_DIR || path.join(__dirname,'.cache','online') });
 // Free play can hand one side to full-strength Stockfish, which answers after a human-like pause.
 // It plays one of its top moves at random (top 4 or top 5) rather than always the best, to keep games varied.
 const timing = {replyDelay:()=>randomInt(1000,10001),pick:(count)=>randomInt(0,Math.min(count,randomInt(4,6)))};
@@ -94,6 +100,7 @@ function validateSettings(input={}) {
   if(!Object.hasOwn(THEMES,next.theme))throw new Error('Choose a listed board theme.');
   if(!['full','balanced','laptop'].includes(next.powerMode))throw new Error('Choose a valid power mode.');
   if(!ENGINES.some(entry=>entry.id===next.engineId))throw new Error('Choose a listed engine.');
+  if(typeof next.onlineFeatures!=='boolean')throw new Error('Online features must be on or off.');
   if(!Number.isFinite(next.analysisMs) || next.analysisMs<300 || next.analysisMs>5000 || typeof next.flipped!=='boolean' || typeof next.variety!=='boolean')throw new Error('Invalid analysis settings.');
   return next;
 }
@@ -382,10 +389,10 @@ app.get('/api/analysis',(req,res)=>res.json({...analysis,game:gameInfo()}));
 app.get('/api/engines',(req,res)=>res.json({engines:ENGINES.map(({id,name,chess960,elo,multipv})=>({id,name,chess960,elo,multipv})),defaultId:ENGINES[0].id}));
 app.get('/api/pgn',(req,res)=>res.type('application/x-chess-pgn').attachment('chess-game.pgn').send(rules.pgn(fens[0],moveLog,settings.variant)));
 app.post('/api/new',route((req,res)=>{
-  // powerMode/engineId are session-level: a client echoing them into a new game must not desync the engines from
-  // the governor (validateSettings' key copy would otherwise assign them with no governor wiring in resetGame), so
-  // the live values always win.
-  resetGame(validateSettings({...req.body,powerMode:settings.powerMode,engineId:settings.engineId}));
+  // powerMode/engineId/onlineFeatures are session-level: a client echoing them into a new game must not desync
+  // the engines from the governor (validateSettings' key copy would otherwise assign them with no governor wiring
+  // in resetGame) or silently flip the online opt-in, so the live values always win.
+  resetGame(validateSettings({...req.body,powerMode:settings.powerMode,engineId:settings.engineId,onlineFeatures:settings.onlineFeatures}));
   res.json(gameInfo());
 }));
 app.post('/api/settings',route((req,res)=>{
@@ -441,6 +448,26 @@ app.post('/api/analyze',route((req,res)=>{
   const ply=atPly===undefined?fens.lastIndexOf(fen):atPly;
   if(!Number.isInteger(ply)||ply<0||ply>tailPly()||fens[ply]!==fen)throw new Error('Choose a position in this game.');
   scheduleAnalysis(ply);res.json({ok:true,fen,ply,legalMoves:rules.legalMoves(fen,settings.variant),...rules.status(fens,ply)});
+}));
+// Online lookups are opt-in and answer ONLY for positions of the current game — the same membership rule
+// /api/analyze applies — so even an opted-in user cannot turn this server into an open proxy for arbitrary
+// FENs. The off-refusal is a 409 conflict: the request itself is fine, the feature is deliberately off.
+function requireOnlineGameFen(body) {
+  if(!settings.onlineFeatures)throw Object.assign(new Error('Online features are off. Turn them on in Settings first.'),{status:409,code:'ONLINE_DISABLED'});
+  const fen=body?.fen;
+  if(typeof fen!=='string' || !fens.includes(fen))throw Object.assign(new Error('Choose a position in this game.'),{status:400,code:'BAD_POSITION'});
+  return fen;
+}
+app.post('/api/online/tablebase',route(async(req,res)=>{
+  const fen=requireOnlineGameFen(req.body);
+  // The tablebase covers at most 7 pieces; count the piece letters of the board field locally so oversized
+  // positions are rejected without any network call.
+  const pieces=fen.split(' ')[0].replace(/[^KQRBNPkqrbnp]/g,'').length;
+  if(pieces>7)throw Object.assign(new Error(`Tablebase lookups need 7 pieces or fewer; this position has ${pieces}.`),{status:400,code:'TOO_MANY_PIECES'});
+  res.json(await online.tablebase(fen));
+}));
+app.post('/api/online/cloud-eval',route(async(req,res)=>{
+  res.json(await online.cloudEval(requireOnlineGameFen(req.body)));
 }));
 app.post('/api/undo',route((req,res)=>{
   pausedTabs.clear();
@@ -519,4 +546,4 @@ if(require.main===module) {
   server.on('error',error=>{console.error(error.code==='EADDRINUSE'?`CHESS is already running at http://localhost:${PORT}`:error.message);process.exitCode=1;});
   for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{engine.quit();playingEngine.quit();reviewEngine.quit();server.close();process.exit(0);});
 }
-module.exports={app,engine,playingEngine,reviewEngine,governor,archive,timing,scoreText,prettyLine,mkLine,gameInfo,pickEngines};
+module.exports={app,engine,playingEngine,reviewEngine,governor,archive,online,timing,scoreText,prettyLine,mkLine,gameInfo,pickEngines};

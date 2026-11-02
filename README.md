@@ -20,10 +20,11 @@ A local chess workspace that respects your laptop.</p>
   <img src="https://img.shields.io/badge/express-4-000000?style=flat-square&logo=express&logoColor=white" alt="express">
   <img src="https://img.shields.io/badge/framework-none-vanilla_JS-8A2BE2?style=flat-square" alt="vanilla">
   <img src="https://img.shields.io/badge/engines-5_registered-1baca6?style=flat-square" alt="engines">
-  <img src="https://img.shields.io/badge/tests-81_passing-brightgreen?style=flat-square" alt="tests">
+  <img src="https://img.shields.io/badge/tests-98_passing-brightgreen?style=flat-square" alt="tests">
   <img src="https://img.shields.io/badge/Chess960-full_support-teal?style=flat-square" alt="chess960">
   <img src="https://img.shields.io/badge/a11y-enforced_by_test-96bc4b?style=flat-square" alt="a11y">
   <img src="https://img.shields.io/badge/telemetry-none-local_first-29443b?style=flat-square" alt="local first">
+  <img src="https://img.shields.io/badge/online-opt--in_lichess-546e7a?style=flat-square&logo=lichess&logoColor=white" alt="online">
   <img src="https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square&logo=windows" alt="windows">
 </p>
 
@@ -37,8 +38,10 @@ A local chess workspace that respects your laptop.</p>
 | You want to… | You get |
 |---|---|
 | **Play** | Ten calibrated strength steps (1320–2800 Elo, unlimited at 100%) — or hand a side to any of five engines that answers after a human-like pause |
+| **Watch the clock** | Optional — 3+2, 5+0, 10+0 or custom (1–180 min · Fischer increment); lives in this tab only (a reload drops it), and a takeback rewinds it to the exact snapshot |
 | **Spice it up** | **Random top-5** mode: the engine picks from its best ideas at random, with a *survival mode* that snaps to full strength when it gets into trouble |
 | **Improve** | Every move graded `Brilliant !!` → `Blunder ??` with a plain-language explanation, the refutation, and the better move |
+| **See the ideas** | Ranked arrows on the board: the engine's top-3 suggestions tinted and thinned by rank, plus the top-2 threats — the coach button toggles them (auto-off while an engine plays your side) |
 | **Review** | Lichess-formula accuracy, a clickable winning-chances graph, key moments — and **Retry**: the board rewinds to your mistake and you must find the right move, judged to within 5% winning chances |
 | **Collect** | Every brilliant move auto-saved as a shareable 1024×1240 board image + PGN + metadata, in a restorable gallery |
 | **Be different** | Six board themes, drag & drop, click-to-move, full keyboard play, Chess960 (positions 0–959) |
@@ -93,6 +96,15 @@ npm start               # → http://localhost:4655
 
 The setup script is idempotent — re-run any time to repair a missing binary. It grabs AVX2+BMI2 builds (any CPU from ~2013); pinned sources are in [Credits](#-credits--licenses).
 
+### 🌐 Online features (off by default)
+
+Everything above works with the network unplugged — that is the default. **Settings → Online** opts in, for the session, to exactly two lichess lookups:
+
+- **Tablebase** — exact verdicts for ≤7-piece endings (win/draw/loss, DTZ/DTM, best moves). The piece count happens locally, so an oversized position never leaves your machine.
+- **Cloud eval** — lichess's crowd-sourced deep evaluation of the current position.
+
+Answers land in a disk cache (`.cache/online/`): cloud evals expire after 24 h, tablebase facts are mathematically immutable and kept forever — never a request per click. And the app **never becomes a proxy**: the server calls lichess only when the toggle is on *and* the FEN was proven to belong to the current game, so no crafted URL can make it fetch anything. Upstream trouble comes back as one honest sentence — a raw fetch error or an HTML error page never reaches the client.
+
 ## 🎛️ Full spec sheet
 
 **Modes**
@@ -121,6 +133,8 @@ The setup script is idempotent — re-run any time to repair a missing binary. I
 | Spec | Value |
 |---|---|
 | Themes | 6 (walnut · forest · ocean · ivory · midnight · rosewood), remembered |
+| Clocks | Off by default · 3+2 / 5+0 / 10+0 / custom 1–180 min + 0–60 s Fischer · this tab only — never posted, a reload drops it · takeback rewinds to the exact snapshot |
+| Ranked arrows | Top-3 engine suggestions tinted & thinned by rank · top-2 threats · coach-button toggle · auto-off while an engine plays your side |
 | Input | Drag & drop · click-to-move · touch · full keyboard |
 | Keyboard | Arrows move · <kbd>Enter</kbd>/<kbd>Space</kbd> select · <kbd>Esc</kbd> cancel · <kbd>←</kbd>/<kbd>→</kbd> history · <kbd>Home</kbd>/<kbd>End</kbd> ends · <kbd>F</kbd> flip |
 | Accessibility | Labelled grid · roving tabindex · visible focus · reduced motion · contrast enforced by a test that parses the source |
@@ -133,20 +147,20 @@ The setup script is idempotent — re-run any time to repair a missing binary. I
 | Stack | Node ≥18 · Express 4 · vanilla JS — zero build step, zero frameworks |
 | Engine I/O | UCI · lazy spawn · OS priority · idle quit · live retune on power-mode switch |
 | Safety | Revision + base-FEN conflict guards on every mutating request |
-| Tests | 81 deterministic (engine boundary stubbed) · `npm test` |
+| Tests | 98 deterministic (engine boundary stubbed) · `npm test` |
 
 ## 🧪 Testing
 
 ```bash
-npm test   # 81 tests: rules, Chess960 castling, grading, governor, engines, contrast
+npm test   # 98 tests: rules, Chess960 castling, clocks, grading, governor, engines, online lookups, contrast
 ```
 
-Covers chess rules (en passant, underpromotion, Chess960 castling), stale-request safety, engine turn handling, review and retry judging, Brilliant detection, the governor's slot and idle-quit behaviour, engine capability fallbacks — and a test that **recomputes WCAG contrast ratios from the source**, so a theme change can never quietly ship an invisible overlay.
+Covers chess rules (en passant, underpromotion, Chess960 castling), stale-request safety, engine turn handling, review and retry judging, Brilliant detection, the governor's slot and idle-quit behaviour, engine capability fallbacks, clock math (increments, flags, takeback rewinds) and the online opt-in with its never-a-proxy guard — and a test that **recomputes WCAG contrast ratios from the source**, so a theme change can never quietly ship an invisible overlay.
 
 ## 🗺️ Roadmap
 
 - [ ] Persistence — games, analyses and annotations to SQLite
-- [ ] Lichess integration — import your own games for automatic review
+- [ ] Lichess integration — *partially done*: opt-in tablebase + cloud-eval lookups are in; importing your own games for automatic review is still pending
 - [ ] Maia opponents — human-like neural nets at 1100–1900 Elo
 - [ ] Mistake book — your blunders as spaced-repetition puzzles
 - [ ] Sequential multi-engine consensus analysis
@@ -162,7 +176,7 @@ lib/tutor.js              Move grading, explanations, hints, sacrifice detection
 lib/archive.js            Brilliant-move collection (PNG via resvg, PGN, metadata)
 public/                   Vanilla-JS board UI: themes, panels, review, gallery
 scripts/setup-engines.js  Fetches every engine binary from official releases
-test/                     81 deterministic Node tests (engine boundary stubbed)
+test/                     98 deterministic Node tests (engine boundary stubbed)
 engines.json              The engine registry and its probed capabilities
 assets/                   Poster art (see the gallery below)
 ```

@@ -2,6 +2,8 @@ const $ = (selector) => document.querySelector(selector);
 const FILES = 'abcdefgh';
 const NAMES = { k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn' };
 const THEMES = window.CHESS_THEMES;
+// Pure chess-clock math (public/clock.js); the wiring below keeps it client-side only.
+const CLOCK = window.CHESS_CLOCK;
 // Move-quality icons in the widely recognised review style: coloured disc, bold glyph. Disc colours
 // are tuned so the white glyph keeps >=3:1 (WCAG 1.4.11 graphics); only inaccuracy keeps its bright
 // yellow disc and flips to dark ink - white on yellow measured 1.6:1, and darkening yellow enough
@@ -31,8 +33,15 @@ let engineName = 'Stockfish 19', engineRegistry = null, pauseSent = false;
 const TAB_ID = crypto.randomUUID ? crypto.randomUUID() : `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 // Review walkthrough: the open key moment, an active retry ({ ply, fen?, move?, solved?, message }) and solved retries.
 let activeMoment = null, bothSides = false, retry = null, bestShown = null;
+// Optional chess clock, this tab only: `clock` is the armed state for the CURRENT game (CLOCK.newClock
+// shape), `pendingClock` the {minutes, incrementSeconds} chosen in the new-game dialog, armed when that
+// fresh game arrives. Never posted, never persisted — reload drops it (see clock.js header).
+let clock = null, pendingClock = null, clockTimer = 0;
 const solved = new Set();
 const legalByFen = new Map(), hints = new Map(), revealed = new Set();
+// Online answers, remembered per FEN for the session: tablebase facts are immutable and cloud evals only
+// need to outlive the local search they bridge. Emptied the moment the Online switch goes back off.
+const onlineByFen = new Map();
 const board = $('#board');
 const ghost = document.createElement('div');
 ghost.id = 'ghost';
@@ -44,6 +53,9 @@ const row = (sq) => flipped ? +sq[1] - 1 : 8 - +sq[1];
 const colorOf = (code) => code === code.toUpperCase() ? 'w' : 'b';
 const colorName = (color) => color === 'w' ? 'White' : 'Black';
 const currentFen = () => game?.fens[viewIndex];
+// Same count the server gates tablebase lookups on (server.js /api/online/tablebase): piece letters of the
+// board field only, computed locally so the client never even asks for a bigger position.
+const pieceCount = (fen) => fen.split(' ')[0].replace(/[^KQRBNPkqrbnp]/g, '').length;
 const scoreLabel = (cp) => cp == null ? '—' : Math.abs(cp) >= 90000 ? `${cp < 0 ? '-' : ''}M` : `${cp > 0 ? '+' : ''}${(cp / 100).toFixed(2)}`;
 // Eval columns: the leading glyph (+, -, M — advances 5.7-13.4px at 14px) gets a fixed .96em box
 // (.ev .sg in style.css) so every row's digits start at the same offset; a missing glyph keeps the box.
@@ -170,7 +182,8 @@ function mover() {
   if (!game || busy || promoting) return null;
   const turn = currentFen().split(' ')[1];
   if (retry && viewIndex === retry.ply) return retry.fen ? null : turn;
-  if (viewIndex === game.moveLog.length && game.over) return null;
+  // A clock flag ends the game exactly like the server's own result does (the server never learns of it).
+  if (viewIndex === game.moveLog.length && (game.over || clockFlagged())) return null;
   if (botLocked(turn)) return null;
   return turn;
 }
@@ -355,6 +368,7 @@ function confirmDiscard(heading, confirmLabel, discarded, keepPly) {
 
 async function chooseMove(from, to, fixedPromotion) {
   if (busy || promoting || !game) return;
+  if (clockFlagged()) return; // no moves for a flagged game, not even a promotion choice
   const fen = currentFen(), revision = game.revision, matches = matchMoves(from, to);
   if (matches && !matches.length) { syncBoard(fen); return; }
   // Off the live position a committed move branches the game and discards the rest of the line; a retry is judged on
@@ -411,6 +425,12 @@ function adoptGame(next) {
     arrowsOn = game.settings.mode !== 'engine';
     $('#coach').setAttribute('aria-pressed', String(arrowsOn));
     if (flipped !== game.settings.flipped) { flipped = game.settings.flipped; buildSquares(); }
+    // A fresh game arms the clock chosen in the dialog; any other fresh game (restore/study, first
+    // load) arrives with no pending choice, so it simply plays untimed.
+    clearInterval(clockTimer);
+    clock = pendingClock ? CLOCK.newClock(pendingClock.minutes, pendingClock.incrementSeconds) : null;
+    pendingClock = null;
+    if (clock) clockTimer = setInterval(clockTick, 100);
   }
   legalByFen.set(game.fens.at(-1), game.legalMoves);
   for (const note of game.annotations) {
@@ -419,7 +439,51 @@ function adoptGame(next) {
     (seenArchive ||= new Set()).add(note.archiveId);
   }
   seenArchive ||= new Set();
+  // Every adopted state reconciles the clock: completed plies bank their Fischer increments, an
+  // engine reply that lands while we browse history still switches the running side, a takeback
+  // rewinds to its snapshot, and a server game end freezes the count.
+  if (clock) clockSyncGame();
   return fresh;
+}
+
+// ---- clock wiring (all of it lives in this tab; see clock.js for the math) ----
+// The flag is a local game end: true only at the live position, like game.over in mover().
+const clockFlagged = () => viewIndex === game.moveLog.length && Boolean(clock?.flagged);
+
+function clockSyncGame() {
+  CLOCK.sync(clock, game.moveLog.length, game.moveLog, game.turn, game.over, performance.now());
+}
+
+// 100 ms cadence: smooth enough for tenths, cheap enough to leave running while a clock is armed.
+// Hidden tabs throttle the interval to ~1 s; the stamp-based math keeps the elapsed count exact.
+function clockTick() {
+  if (!clock || clock.flagged || !clock.running) return;
+  // A flag changes state the fingerprint does not know (the play buttons sit behind its gate), so
+  // the one-time rebuild is forced — same as every other rare structural change in this file.
+  if (CLOCK.tick(clock, performance.now())) renderPanels(true); // notice, readouts, input lock
+  else renderClocks();
+}
+
+// The readouts are plain text nodes (like the depth/nps chips) so the tick never rebuilds panels.
+function renderClocks() {
+  if (!clock) return;
+  for (const [id, color] of [['topPlayer', flipped ? 'w' : 'b'], ['bottomPlayer', flipped ? 'b' : 'w']])
+    writeClock($(`#${id}`), color);
+}
+
+function writeClock(el, color) {
+  const read = el.querySelector('.player-clock');
+  if (!clock) { read.hidden = true; return; }
+  read.hidden = false;
+  const ms = clock.ms[color];
+  text(read, CLOCK.formatClock(ms));
+  const low = !clock.flagged && CLOCK.isLow(ms);
+  read.classList.toggle('low', low);
+  read.classList.toggle('running', clock.running === color);
+  read.classList.toggle('out', clock.flagged === color);
+  // Labelled for screen readers; the words carry the low/flag state, and the tenths format switch
+  // (clock.js) is the visual cue, so low time never rides on colour alone.
+  read.setAttribute('aria-label', `${colorName(color)}'s clock${low ? ', time is low' : ''}${clock.flagged === color ? ', flagged' : ''}`);
 }
 
 function setBusy(value) {
@@ -431,6 +495,7 @@ function setBusy(value) {
 async function submitMove(from, to, promotion, kingTo) {
   if (busy || !game) return;
   if (retry && viewIndex === retry.ply) return tryMove(from, to, promotion, kingTo);
+  if (clockFlagged()) return; // a flag can land while a promotion dialog was open; the move dies with it
   const atPly = viewIndex, baseFen = currentFen(), revision = game.revision;
   const moving = pieces.get(from), captured = pieces.get(to);
   clearTimeout(analysisTimer);
@@ -475,7 +540,7 @@ const undoTarget = () => {
   if (game.settings.mode === 'engine') while (target > 0 && game.fens[target].split(' ')[1] === botSide(game.settings)) target--;
   return target;
 };
-const botWaiting = () => game.settings.mode === 'free' && game.enginePaused && !game.over
+const botWaiting = () => game.settings.mode === 'free' && game.enginePaused && !game.over && !clock?.flagged
   && viewIndex === game.moveLog.length && game.turn === botSide(game.settings);
 // Mirrors eloFor in server.js.
 const strengthLabel = (strength) => strength >= 100 ? 'Full strength' : `${Math.round(1320 + (strength - 10) * 18.5)} Elo`;
@@ -505,6 +570,7 @@ function renderPanels(force = false) {
   const check = game.inCheck ? ' · Check' : '';
   text($('#status'), !online ? 'Connection lost. Reconnecting…'
     : retry ? `Retry: find a better move for ${colorName(turn)}.`
+    : atTail && clock?.flagged ? `${colorName(clock.flagged)} ran out of time`
     : atTail && game.over ? game.result
     : !atTail ? `Position ${viewIndex} of ${last}. Move a piece to start a new line from here — the ${last - viewIndex} ${last - viewIndex === 1 ? 'move' : 'moves'} after this position will be discarded.`
     : bot && game.computer.phase === 'error' ? `${engineName} could not move. Use Retry engine.`
@@ -516,7 +582,10 @@ function renderPanels(force = false) {
     el.querySelector('img').src = `pieces/${color}K.svg`;
     text(el.querySelector('strong'), bot ? (isEngine ? engineName : 'You') : colorName(color));
     text(el.querySelector('div span'), !isEngine ? `${colorName(color)} pieces` : s.mode === 'engine' ? strengthLabel(s.strength) : (game.survival ? 'Survival mode · full strength' : s.variety ? 'Random top-5 move · 1–10 s' : 'Best move · 1–10 s'));
-    text(el.querySelector('.player-turn'), turn !== color || (atTail && game.over) ? '' : isEngine && atTail ? (botWaiting() ? 'Waiting' : 'Thinking…') : 'To move');
+    writeClock(el, color);
+    // A flag replaces the turn chip: the flagged side reads "Flagged", the other side reads nothing.
+    text(el.querySelector('.player-turn'), atTail && clock?.flagged ? (color === clock.flagged ? 'Flagged' : '')
+      : turn !== color || (atTail && game.over) ? '' : isEngine && atTail ? (botWaiting() ? 'Waiting' : 'Thinking…') : 'To move');
   }
   $('#botPlay').classList.toggle('hidden', !botWaiting());
   text($('#modeButton'), modeText(s));
@@ -526,9 +595,11 @@ function renderPanels(force = false) {
   renderControls();
   if (game.analysisMs) $('#speed').value = String(game.analysisMs);
   if (s.powerMode) $('#power').value = s.powerMode; // session-level: synced from the server on every poll
+  if (s.onlineFeatures !== undefined) $('#online').value = s.onlineFeatures ? 'on' : 'off'; // session-level opt-in, same pattern
   updateHighlights();
   drawArrows(retry ? null : live);
   maybeFetchHint(live);
+  maybeFetchOnline(); // opt-in answers for the position on screen; a no-op while the switch is off
   // Depth/nps tick every ~200ms while the engine thinks (server merges them into the live analysis), so they
   // ride OUTSIDE the fingerprint in this dedicated textContent-only write: a thinking tick costs two text
   // nodes at most, never the full panel rebuild below.
@@ -541,7 +612,16 @@ function renderPanels(force = false) {
   const livePrint = live && [live.fen, live.ply, live.phase, live.terminalCp ?? null, live.error ?? null, live.opening ?? null,
     live.lines.map((line) => [line.uci, line.text, line.pretty, line.san, line.from, line.to, line.displayTo ?? null]),
     live.threats.map((line) => [line.uci, line.text, line.pretty, line.from, line.to, line.displayTo ?? null])];
-  const fingerprint = JSON.stringify([game.revision, game.annotations, game.evalHist, game.reviewAll, game.deep.active, game.deep.done, game.computer, viewIndex, livePrint, arrowsOn, online, hints.get(hintKey), revealed.has(hintKey), retry, activeMoment, bestShown, bothSides, solved.size, paused, engineName, s.powerMode]);
+  // Online answers join by content identity, like every other input, so a finished lookup rebuilds once.
+  const onlineState = onlineByFen.get(fen);
+  const onlinePrint = onlineState && [
+    onlineState.tablebase && [onlineState.tablebase.state, onlineState.tablebase.message ?? null, onlineState.tablebase.data && [
+      onlineState.tablebase.data.category, onlineState.tablebase.data.dtz, onlineState.tablebase.data.dtm,
+      onlineState.tablebase.data.checkmate, onlineState.tablebase.data.stalemate, onlineState.tablebase.data.insufficientMaterial,
+      onlineState.tablebase.data.moves.map((move) => [move.uci, move.san, move.category, move.dtz])]],
+    onlineState.cloud && [onlineState.cloud.state, onlineState.cloud.data && [onlineState.cloud.data.depth, onlineState.cloud.data.pvs.map((pv) => [pv.whiteCp, pv.mate, pv.moves])]],
+  ];
+  const fingerprint = JSON.stringify([game.revision, game.annotations, game.evalHist, game.reviewAll, game.deep.active, game.deep.done, game.computer, viewIndex, livePrint, arrowsOn, online, hints.get(hintKey), revealed.has(hintKey), retry, activeMoment, bestShown, bothSides, solved.size, paused, engineName, s.powerMode, s.onlineFeatures, onlinePrint]);
   if (!force && fingerprint === panelFingerprint) return;
   panelFingerprint = fingerprint;
   const thinking = !paused && (!live || ['thinking', 'idle', 'threats'].includes(live.phase));
@@ -554,9 +634,16 @@ function renderPanels(force = false) {
   text($('#powerChip'), `${engineName} · ${capital(s.powerMode || 'balanced')}`);
   text($('#turnChip'), `${colorName(turn)} to move`);
   text($('#opening'), live?.opening || (atTail ? game.opening : null) || (viewIndex === 0 ? 'Starting position' : 'Explore this position'));
+  // The cloud line is a stopgap above the local lines: it shows only while the local search has nothing yet
+  // (not ready, no lines) — the same conditions that gate its fetch in maybeFetchOnline — and drops the
+  // moment local results arrive. Like the local lines it hides for retries and while offline/paused.
+  const cloudSlot = onlineByFen.get(fen)?.cloud;
+  const cloud = s.onlineFeatures && online && !paused && !retry && !(live && (live.phase === 'ready' || live.lines.length))
+    && cloudSlot?.state === 'done' && cloudSlot.data.pvs[0]?.moves.length ? cloudSlot.data : null;
   const lines = $('#lines');
   const focusedPlay = document.activeElement?.closest('.play')?.dataset.rank;
   lines.replaceChildren();
+  if (cloud) lines.append(cloudRow(cloud, fen));
   if (!paused && live?.lines.length && !retry) {
     for (const [i, line] of live.lines.entries()) {
       const el = document.createElement('div');
@@ -588,6 +675,7 @@ function renderPanels(force = false) {
     el.onmouseleave = () => hotArrow(`threat-${i}`, false);
     threats.append(el);
   }
+  renderTablebase(fen);
   renderCoach(hintKey);
   renderMoves(); renderGraph(); renderReview();
   // When a game ends the server starts its review; show it once per game.
@@ -674,6 +762,132 @@ function maybeFetchHint(live) {
   api(`hint?ply=${viewIndex}`).then((hint) => hints.set(key, hint)).catch(() => hints.delete(key)).finally(() => renderPanels());
 }
 
+// Online layer, client half. LOCAL-FIRST: nothing is requested while the Online switch is off — the check
+// here mirrors the server's own refusal — and only ever for the position on screen, which the server
+// re-verifies against the current game, so the app cannot become an open proxy. Answers are remembered per
+// FEN; a transient failure (network, upstream) is retried after a pause, while "no lichess answer" is a
+// fact about the position and is never retried.
+const ONLINE_RETRY_MS = 15000;
+function maybeFetchOnline() {
+  if (!game?.settings?.onlineFeatures || !online) return;
+  const fen = currentFen();
+  const live = analysis?.fen === fen && (analysis.ply === undefined || analysis.ply === viewIndex) ? analysis : null;
+  let entry = onlineByFen.get(fen);
+  if (!entry) { entry = { tablebase: null, cloud: null }; onlineByFen.set(fen, entry); }
+  const stale = (slot) => slot?.state === 'error' && slot.retry && Date.now() - slot.errorAt > ONLINE_RETRY_MS;
+  const ask = (kind, run) => {
+    entry[kind] = { state: 'loading' };
+    run().then((data) => { entry[kind] = { state: 'done', data }; })
+      .catch((error) => { entry[kind] = { state: 'error', message: error.message, errorAt: Date.now(), retry: error.code !== 'NO_UPSTREAM_ANSWER' }; })
+      .finally(() => renderPanels());
+  };
+  // Exact endgame facts are worth an ask for every <= 7-piece position on screen (pieceCount mirrors the server's gate).
+  if (pieceCount(fen) <= 7 && (!entry.tablebase || stale(entry.tablebase))) ask('tablebase', () => api('online/tablebase', { fen }));
+  // The cloud line only bridges the gap before local lines exist, so once they exist it is not worth an ask.
+  if (!(live && (live.phase === 'ready' || live.lines.length)) && (!entry.cloud || stale(entry.cloud))) ask('cloud', () => api('online/cloud-eval', { fen }));
+}
+
+// UCI -> SAN for a cloud line's first move. The panel speaks SAN and the position's own legal-move list is
+// already in hand: piece type from the board, disambiguation from the other legal moves reaching the same
+// square, castling from the move itself. Check/mate marks would need full rules, so the label runs without
+// them for the second or two before the local lines take over.
+function cloudSan(fen, uci) {
+  const legal = legalByFen.get(fen) || [];
+  const move = legal.find((m) => m.uci === uci);
+  if (!move) return uci;
+  if (move.castle) return move.castle === 'k' ? 'O-O' : 'O-O-O';
+  const board = parseBoard(fen), piece = board[move.from];
+  if (piece.toLowerCase() === 'p')
+    return `${move.from[0] !== move.to[0] ? `${move.from[0]}x` : ''}${move.to}${move.promotion ? `=${move.promotion.toUpperCase()}` : ''}`;
+  const rivals = legal.filter((m) => m.to === move.to && m.from !== move.from && board[m.from] === piece);
+  const disambig = !rivals.length ? '' : !rivals.some((m) => m.from[0] === move.from[0]) ? move.from[0]
+    : !rivals.some((m) => m.from[1] === move.from[1]) ? move.from[1] : move.from;
+  return `${piece.toUpperCase()}${disambig}${board[move.to] ? 'x' : ''}${move.to}`;
+}
+
+// The cloud line: a local line's anatomy (score column, first move, play control) with a cloud glyph and a
+// source note in place of the local pretty continuation, which the UCI-only cloud answer cannot provide.
+function cloudRow(data, fen) {
+  const pv = data.pvs[0], uci = pv.moves[0];
+  const score = pv.mate != null ? `${pv.mate < 0 ? '-' : ''}M${Math.abs(pv.mate)}` : pv.whiteCp == null ? '—' : `${pv.whiteCp > 0 ? '+' : ''}${(pv.whiteCp / 100).toFixed(2)}`;
+  const row = document.createElement('div');
+  row.className = 'line cloud';
+  row.title = 'lichess cloud evaluation';
+  row.innerHTML = `<span class="rank"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg></span><span class="ev">${evHtml(score)}</span><div class="pv"><strong>${cloudSan(fen, uci)}</strong><span>Cloud eval · depth ${data.depth ?? '—'} · lichess</span></div>`;
+  if ((legalByFen.get(fen) || []).some((move) => move.uci === uci)) {
+    const play = document.createElement('button');
+    play.className = 'play';
+    play.setAttribute('aria-label', `Play ${uci}`);
+    play.title = `Play ${uci}`;
+    play.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4 20 12 7 20Z"/></svg>';
+    play.disabled = busy || mover() === null;
+    play.onclick = () => chooseMove(uci.slice(0, 2), uci.slice(2, 4), uci[4]);
+    row.append(play);
+  }
+  return row;
+}
+
+// Tablebase categories are lichess's, from the side to move; moves carry the category of the position AFTER
+// them (opponent to move), so both directions need the mirror map. Words follow lichess's own UI.
+const TB_INVERT = { win: 'loss', loss: 'win', draw: 'draw', 'maybe-win': 'maybe-loss', 'maybe-loss': 'maybe-win', 'cursed-win': 'blessed-loss', 'blessed-loss': 'cursed-win' };
+const TB_WORDS = { win: 'Win', 'maybe-win': 'Maybe win', 'cursed-win': 'Cursed win', draw: 'Draw', 'blessed-loss': 'Blessed loss', 'maybe-loss': 'Maybe loss', loss: 'Loss' };
+
+function tbNote(message, error = false) {
+  const note = document.createElement('p');
+  note.className = `tb-hint${error ? ' error' : ''}`;
+  note.textContent = message;
+  return note;
+}
+function tablebaseNodes(data, fen) {
+  const white = fen.split(' ')[1] === 'w';
+  const fromWhite = (category) => white ? category : TB_INVERT[category] || category;
+  const outcome = data.wdl == null ? null : white ? data.wdl : -data.wdl;
+  const label = data.checkmate ? 'Checkmate' : data.stalemate ? 'Stalemate' : data.insufficientMaterial ? 'Draw · insufficient material'
+    : outcome === 0 ? 'Draw' : outcome == null ? 'Unknown' : outcome > 0 ? 'White wins' : 'Black wins';
+  // maybe/cursed/blessed stay one-sided but carry a rule nuance; the raw term keeps the verdict one line.
+  const nuance = ['maybe-win', 'maybe-loss', 'cursed-win', 'blessed-loss'].includes(fromWhite(data.category)) ? ` · ${fromWhite(data.category)}` : '';
+  const facts = [data.dtz != null ? `DTZ ${data.dtz}` : null, data.dtm != null ? `DTM ${data.dtm}` : null].filter(Boolean).join(' · ');
+  const verdict = document.createElement('p');
+  verdict.className = 'tb-verdict';
+  verdict.innerHTML = `${label}${nuance}${facts ? `<span class="tb-facts"> · ${facts}</span>` : ''}`;
+  const moves = document.createElement('div');
+  moves.className = 'tb-moves';
+  for (const move of data.moves) {
+    const wdl = move.wdl == null ? null : -move.wdl; // mover's outcome: the entry's wdl is the opponent's
+    const category = TB_INVERT[move.category] || move.category;
+    const row = document.createElement('div');
+    row.className = `tb-move${wdl > 0 ? ' win' : wdl < 0 ? ' loss' : ' draw'}`;
+    row.innerHTML = `<strong>${move.san}</strong><span class="tb-cat">${TB_WORDS[category] || (wdl > 0 ? 'Win' : wdl < 0 ? 'Loss' : 'Draw')}</span><span class="tb-dtz">${move.dtz != null ? `DTZ ${move.dtz}` : ''}</span>`;
+    moves.append(row);
+  }
+  return [verdict, moves];
+}
+// The tablebase block exists only for <= 7-piece positions; a retry hides it with every other engine answer
+// (its best moves are answers too). With Online off it shrinks to the one-line opt-in hint.
+function renderTablebase(fen) {
+  const box = $('#tablebaseBox');
+  if (pieceCount(fen) > 7 || retry) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  const body = $('#tablebaseBody'), title = $('#tablebaseTitle');
+  if (!game.settings.onlineFeatures) {
+    title.classList.add('hidden');
+    const hint = document.createElement('p');
+    hint.className = 'tb-hint';
+    const turnOn = document.createElement('button');
+    turnOn.className = 'text-action';
+    turnOn.textContent = 'Turn Online on';
+    turnOn.onclick = () => { $('#online').value = 'on'; setOnline(true); };
+    hint.append('Perfect endgame information exists for this position — ', turnOn);
+    body.replaceChildren(hint);
+    return;
+  }
+  title.classList.remove('hidden');
+  const slot = onlineByFen.get(fen)?.tablebase;
+  if (!slot || slot.state === 'loading') return body.replaceChildren(tbNote('Checking lichess tablebase…'));
+  if (slot.state === 'error') return body.replaceChildren(tbNote(slot.message, true));
+  body.replaceChildren(...tablebaseNodes(slot.data, fen));
+}
+
 function arrow(from, to, color, opacity, id, width = 12) {
   const x = col(from) * 100 + 50, y = row(from) * 100 + 50, dx = (col(to) - col(from)) * 100, dy = (row(to) - row(from)) * 100;
   const length = Math.hypot(dx, dy);
@@ -687,10 +901,13 @@ function drawArrows(live) {
   let content = '';
   if (arrowsOn && live) {
     // Solid per-theme fills: the old global fade (#305c40/#9f5949 at .23-.62 alpha) sat at 1.0-2.7:1
-    // against the squares. Each theme's colours clear 3:1 (WCAG 1.4.11) on both square colours, so
-    // tier hierarchy comes from width alone; test/ui-contrast.test.js pins the ratios.
+    // against the squares. Every tint clears 3:1 (WCAG 1.4.11) on both square colours, so the top-3
+    // engine lines ladder width AND tint - rank 1 darkest/thickest, rank 2 mid, rank 3 lightest -
+    // rather than translucency, which would re-composite a fill below the floor. Threat arrows keep
+    // a single tint at two widths; test/ui-contrast.test.js pins the ratios and the ladder order.
     const theme = THEMES[themeKey];
-    live.lines.slice(0, 3).forEach((line, i) => { content += arrow(line.from, line.displayTo || line.to, theme.arrowMove, 1, `suggestion-${i}`, 12 - i * 2); });
+    const moveTints = [theme.arrowMove, theme.arrowMove2, theme.arrowMove3];
+    live.lines.slice(0, 3).forEach((line, i) => { content += arrow(line.from, line.displayTo || line.to, moveTints[i], 1, `suggestion-${i}`, 12 - i * 2); });
     live.threats.slice(0, 2).forEach((line, i) => { content += arrow(line.from, line.displayTo || line.to, theme.arrowThreat, 1, `threat-${i}`, 10 - i * 2); });
   }
   if ($('#arrows').innerHTML !== content) $('#arrows').innerHTML = content;
@@ -1114,10 +1331,17 @@ function notify(message, error = false) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.add('hidden'), error ? 6500 : 3500);
 }
 
-async function pollAnalysis() {
-  clearTimeout(pollTimer);
-  if (polling) return;
-  if (busy || promoting || gesture) { pollTimer = setTimeout(pollAnalysis, 500); return; }
+// Idle-aware polling. While anything is active — analysis thinking, the computer thinking, a deep review
+// running, a quick game review still filling positions, or a revision bump just observed — the loop keeps
+// its historical 700 ms; once the analysis is ready and nothing else runs it backs off to 5 s. Any user
+// action calls pollAnalysis(), which kicks the fast cadence at once, even mid-flight (the flag is read by
+// the next re-arm). A hidden tab keeps its old 2.5 s back-off untouched, ahead of every other rule.
+const POLL_ACTIVE = 700, POLL_IDLE = 5000, POLL_HIDDEN = 2500;
+let pollKick = true; // start fast: the first poll is the connection attempt
+const pollBusy = () => !game || !analysis || analysis.phase !== 'ready' || game.computer?.phase === 'thinking'
+  || game.deep.active || (game.reviewAll && !reviewStatus().complete);
+async function pollTick() {
+  if (busy || promoting || gesture) { pollTimer = setTimeout(pollTick, 500); return; }
   polling = true;
   const revision = game?.revision;
   try {
@@ -1126,6 +1350,7 @@ async function pollAnalysis() {
     online = true;
     const first = !game, wasTail = first || viewIndex === game.moveLog.length;
     const changed = first || data.game.revision !== game.revision;
+    if (changed) pollKick = true; // an observed revision bump keeps the fast cadence for one more poll
     const fresh = adoptGame(data.game); delete data.game; analysis = data;
     if (first && game.settings.theme !== themeKey) api('settings', { theme: themeKey }).catch(() => {});
     if (changed) {
@@ -1140,8 +1365,14 @@ async function pollAnalysis() {
     online = false;
     if (game) renderPanels();
     else { text($('#status'), 'Cannot connect. Run npm start to open your board.'); text($('#engineState'), 'Offline'); }
-  } finally { polling = false; pollTimer = setTimeout(pollAnalysis, document.hidden ? 2500 : 700); }
+  } finally {
+    polling = false;
+    const fast = pollKick;
+    pollKick = false;
+    pollTimer = setTimeout(pollTick, document.hidden ? POLL_HIDDEN : (fast || pollBusy()) ? POLL_ACTIVE : POLL_IDLE);
+  }
 }
+function pollAnalysis() { pollKick = true; clearTimeout(pollTimer); if (!polling) pollTick(); }
 
 async function refreshCollection() {
   try {
@@ -1211,6 +1442,11 @@ function openNewDialog() {
   $('#gameBot').value = s.engineSide || '';
   $('#gameVariety').checked = Boolean(s.variety);
   $('#gameSeed').value = '';
+  // The clock never reaches the server, so the dialog mirrors the armed client-side one; untimed games
+  // show Off, and a non-preset value falls back to Custom with its minutes/increment filled in.
+  const pick = clock ? `${clock.minutes}+${clock.incrementSeconds}` : 'off';
+  $('#gameClock').value = ['off', '3+2', '5+0', '10+0'].includes(pick) ? pick : 'custom';
+  if (clock) { $('#gameClockMin').value = clock.minutes; $('#gameClockInc').value = clock.incrementSeconds; }
   $('#strength').value = s.strength;
   // The dialog names the chosen engine; where its capabilities run out the server's pickEngines notices say so.
   const chosen = engineRegistry?.engines.find((entry) => entry.id === (s.engineId ?? engineRegistry?.defaultId));
@@ -1230,16 +1466,32 @@ function syncSetup() {
   $('#varietyField').classList.toggle('hidden', engine || !$('#gameBot').value);
   $('#strengthField').classList.toggle('hidden', !engine);
   $('#seedField').classList.toggle('hidden', $('#gameVariant').value !== 'chess960');
+  const customClock = $('#gameClock').value === 'custom';
+  $('#clockMinField').classList.toggle('hidden', !customClock);
+  $('#clockIncField').classList.toggle('hidden', !customClock);
   $('#strengthOutput').textContent = `${$('#strength').value}% · ${strengthLabel(+$('#strength').value)}`;
 }
-$('#gameMode').onchange = $('#gameVariant').onchange = $('#gameBot').onchange = $('#strength').oninput = syncSetup;
+$('#gameMode').onchange = $('#gameVariant').onchange = $('#gameBot').onchange = $('#gameClock').onchange = $('#strength').oninput = syncSetup;
 $('#newForm').onsubmit = async (event) => {
   event.preventDefault();
   const mode = $('#gameMode').value, variant = $('#gameVariant').value, humanColor = $('#gameSide').value, seed = $('#gameSeed').value.trim();
+  // The clock rides along client-side: validated here, armed when that fresh game is adopted, never posted.
+  let chosen = null;
+  if ($('#gameClock').value !== 'off') {
+    const [minutes, incrementSeconds] = $('#gameClock').value === 'custom'
+      ? [+$('#gameClockMin').value, +$('#gameClockInc').value]
+      : $('#gameClock').value.split('+').map(Number);
+    const refuse = (message) => { $('#setupError').textContent = message; $('#setupError').classList.remove('hidden'); };
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 180) return refuse('Clock minutes must be a whole number from 1 to 180.');
+    if (!Number.isInteger(incrementSeconds) || incrementSeconds < 0 || incrementSeconds > 60) return refuse('Clock increment must be a whole number of seconds from 0 to 60.');
+    chosen = { minutes, incrementSeconds };
+  }
+  pendingClock = chosen;
   const engineSide = mode === 'free' ? $('#gameBot').value || null : null;
   const body = { mode, variant, humanColor, engineSide, variety: Boolean(engineSide) && $('#gameVariety').checked, strength: +$('#strength').value, seed: variant === 'chess960' && seed ? +seed : null, theme: themeKey, flipped: (mode === 'engine' && humanColor === 'b') || engineSide === 'w' };
   const ok = await mutate('new', body, (error) => { $('#setupError').textContent = error.message; $('#setupError').classList.remove('hidden'); });
   if (ok) $('#newDialog').close();
+  else pendingClock = null; // the choice belongs to the game it was made for, never the next one
 };
 $('#new').onclick = $('#modeButton').onclick = openNewDialog;
 $('#newCancel').onclick = () => $('#newDialog').close();
@@ -1259,6 +1511,22 @@ $('#power').onchange = () => api('settings', { powerMode: $('#power').value }).c
 // So is the engine pick: the server re-aims its processes (with Stockfish filling any capability gap) and the
 // next poll brings back the name and any notice.
 $('#engine').onchange = () => api('settings', { engineId: $('#engine').value }).catch((error) => notify(error.message, true));
+// And so is Online, the local-first opt-in: one POST, the next poll syncs the switch back. Enabling fetches
+// the position on screen once, immediately; disabling forgets every cached answer so nothing online lingers.
+async function setOnline(on) {
+  try {
+    const data = await api('settings', { onlineFeatures: on });
+    if (game) game.settings = { ...game.settings, ...data.settings };
+  } catch (error) {
+    $('#online').value = game?.settings?.onlineFeatures ? 'on' : 'off';
+    return notify(error.message, true);
+  }
+  if (!on) onlineByFen.clear();
+  else maybeFetchOnline();
+  pollAnalysis();
+  renderPanels();
+}
+$('#online').onchange = () => setOnline($('#online').value === 'on');
 // At the live position a takeback is the familiar one-move undo; off-tail it also discards the browsed continuation,
 // so the cost is confirmed first (a variation tree is out of scope — see README). The off-tail post pins the
 // revision it quoted, so a reply that lands while the dialog is open can never be silently swallowed with it.
