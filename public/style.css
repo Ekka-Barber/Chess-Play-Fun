@@ -1,6 +1,6 @@
 @font-face { font-family: Sentient; src: url('fonts/Sentient-Medium.woff2') format('woff2'); font-weight: 500; font-display: swap; }
 /* Defaults match the Classic walnut theme; app.js overwrites them from themes.js. */
-:root { color-scheme: dark; --bg: #24231f; --surface: #2f2e29; --raised: #414039; --text: #f1eee5; --muted: #c4c0b3; --light: #ede2cd; --dark: #a78162; --accent: #ded5b9; --ink: #24251f; --danger: #f1b4a1; --selected: #d8d899; --coord-light: #101710; --coord-dark: #101710; --arrow-move: #163520; --arrow-move2: #034111; --arrow-move3: #034612; --arrow-threat: #4d2019; --target: #221a12; --header: color-mix(in srgb, var(--bg) 82%, #000); --line: color-mix(in srgb, var(--text) 12%, transparent); --board-size: min(58vw,64vh,650px); --ease: cubic-bezier(.16,1,.3,1); font-family: 'Segoe UI',system-ui,sans-serif; font-synthesis: none; }
+:root { color-scheme: dark; --bg: #24231f; --surface: #2f2e29; --raised: #414039; --text: #f1eee5; --muted: #c4c0b3; --light: #ede2cd; --dark: #a78162; --accent: #ded5b9; --ink: #24251f; --danger: #f1b4a1; --selected: #d8d899; --coord-light: #101710; --coord-dark: #101710; --arrow-move: #040f06; --arrow-move2: #04300c; --arrow-move3: #044613; --arrow-threat: #4d2019; --target: #221a12; --arrow-eng1: #3000c2; --arrow-eng2: #4d3900; --arrow-eng3: #710068; --arrow-eng4: #004061; --arrow-eng5: #004617; --header: color-mix(in srgb, var(--bg) 82%, #000); --line: color-mix(in srgb, var(--text) 12%, transparent); --board-size: min(58vw,64vh,650px); --ease: cubic-bezier(.16,1,.3,1); font-family: 'Segoe UI',system-ui,sans-serif; font-synthesis: none; }
 :root[data-scheme='light'] { --header: var(--surface); }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); min-width: 300px; }
@@ -60,14 +60,20 @@ h1 { margin: 0; font-family: Sentient,Georgia,serif; font-size: 29px; line-heigh
 .square { position: relative; padding: 0; min-height: 0; border-radius: 0; cursor: pointer; color: var(--ink); transition: none; }
 .square.light,.square.light:hover { background: var(--light); }
 .square.dark,.square.dark:hover { background: var(--dark); }
-.square.lastmove::before { content: ''; position: absolute; inset: 0; background: var(--selected); opacity: .5; }
+/* The last-move tint alone measured 1.07-1.17:1 on light squares (a light --selected fill can never
+   reach 3:1 there), so the cue's contrast carrier is an inset ring in --target - the same >=3:1 token
+   the legal-move dot uses - while the translucent fill keeps the familiar hue. */
+.square.lastmove::before { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--selected) 50%, transparent); box-shadow: inset 0 0 0 2px var(--target); }
 .square.sel::before,.square.dragover::before,.square.target:hover::before { content: ''; position: absolute; inset: 0; background: var(--selected); opacity: .8; }
 .square.sel::before { box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--dark) 45%, #000); }
 /* Legal destinations: a dot on empty squares, a corner ring around capturable pieces. Solid
    per-theme --target: the old rgb(0 0 0 / .22-.26) wash measured 1.5-1.9:1 on the squares. */
 .square.target::after { content: ''; position: absolute; left: 50%; top: 50%; width: 30%; height: 30%; transform: translate(-50%,-50%); border-radius: 50%; background: var(--target); z-index: 1; pointer-events: none; }
 .square.target.capture::after { width: 100%; height: 100%; border-radius: 0; background: radial-gradient(transparent 0 79%, var(--target) 80%); }
-.square.check::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: #be6959; opacity: .85; }
+/* The check disc rides the board-overlay contrast law like every arrow: the old fixed #be6959 at .85
+   composited to 1.09-1.39:1 on dark squares (an invisible checked king). var(--arrow-threat) is the
+   theme's >=3:1 dark red - the check disc and threat arrows already meant the same thing: danger. */
+.square.check::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--arrow-threat); }
 .square:focus-visible { outline: 3px solid color-mix(in srgb, var(--dark) 40%, #000); outline-offset: -4px; z-index: 1; }
 .coord { position: absolute; font-size: 11px; font-weight: 700; pointer-events: none; z-index: 2; line-height: 1; }
 .coord.file { right: 4px; bottom: 4px; }.coord.rank { left: 4px; top: 4px; }
@@ -197,6 +203,16 @@ select { cursor: pointer; }
 .line .play { padding: 0; min-height: 40px; width: 35px; color: var(--accent); }.line .play svg { width: 14px; height: 14px; fill: currentColor; stroke: none; }
 .empty-note { margin: 18px 0; color: var(--muted); font-size: 12px; line-height: 1.6; }.empty-note.error { color: var(--danger); }
 .threats { margin-top: 18px; }.threats h3 { font-size: 12px; font-weight: 600; color: var(--danger); margin: 0 0 9px; }.threats h3 span { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 5px; }
+/* Engines-mode legend (the five-engine coach view): one row per registry engine, swatch in its arrow colour.
+   Rows are buttons — hover/focus highlights that engine's arrow on the board; dim rows are skipped/pending. */
+.engine-votes { margin-top: 18px; }
+.engine-votes h3 { font-size: 12px; font-weight: 600; margin: 0 0 9px; }.engine-votes h3 span { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 5px; }
+.engine-vote { width: 100%; justify-content: flex-start; gap: 9px; min-height: 36px; padding: 0 4px; font-size: 12px; text-align: left; }
+.engine-vote .swatch { flex: none; width: 14px; height: 14px; border-radius: 3px; }
+.engine-vote strong { font-size: 12px; font-weight: 600; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.engine-vote .vote-detail { margin-left: auto; flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+.engine-vote.dim { opacity: .55; }
+#engineVotesNote { margin: 8px 0 0; font-size: 12px; line-height: 1.5; }
 .threat { display: grid; grid-template-columns: 18px 48px 1fr; gap: 7px; padding: 6px 0; font-size: 12px; align-items: baseline; }.threat .rank { color: var(--muted); font-size: 12px; }.threat .ev { font-variant-numeric: tabular-nums; color: var(--danger); }.threat .pv { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); }
 /* The settings row now carries two labelled controls (Analysis time, Online): each pair stays glued and
    the row wraps instead of spilling on the narrowest panel. */
