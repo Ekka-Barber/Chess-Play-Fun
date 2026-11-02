@@ -56,6 +56,18 @@ A local chess workspace that respects your laptop.</p>
 
 Both captured from the running app (`scripts/capture-screens.mjs`) — arrows and legends are the real UI, not mock-ups.
 
+## 🆕 What's new
+
+**v4.0.1 — Arrows like the big boards**
+- All board arrows rebuilt to the reference sites' actual recipe (read from chessground's shipped brush table and chess.com's game-review overlays): **saturated mid-tone colours drawn translucent with fat, head-scaled shafts** — the live board stays fully visible under the annotation, on every theme
+- Best-line suggestions: one vivid green at three transparencies and widths — near-solid best move down to a breath-light rank 3 (**darker = stronger**) — plus slim red threats
+- **Engine votes, discoverable**: the top-bar Engine menu now leads with **⟐ All five · engine votes**, and an always-on **colour band under the board** names each engine's colour with its live eval
+- Engines that agree on a move draw staggered parallel arrows (sideways *and* by length), guaranteed inside the board; a new colour-law test pins the vivid profile so a regression to unreadable dark tints fails CI
+
+**v4.0.0 — Five engines, one coach**
+- The **Engines coach view**: every registered engine asked strictly one at a time (300 ms each, through the governor's single slot) casts its first-choice arrow — five opinions on one board
+- Fixed the broken fresh-install download (Stockfish now pinned to the sf_19 zip and unpacked automatically), hardened multi-tab pause and game-restore, added **CI on GitHub Actions** (107 engineless tests, Node 20/22), and replaced poster-only marketing with real screenshots
+
 ## 🏆 The engine roster
 
 Five engines ship in the registry — and every one's **real capabilities were probed from the binary**, not copied from a README. Your pick is used wherever it qualifies; Stockfish fills any gap and the UI tells you when it does.
