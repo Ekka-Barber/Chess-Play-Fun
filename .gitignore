@@ -19,3 +19,4 @@
 /graft/
 *.log
 .env
+/.before-online/
