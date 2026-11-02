@@ -1,6 +1,6 @@
 @font-face { font-family: Sentient; src: url('fonts/Sentient-Medium.woff2') format('woff2'); font-weight: 500; font-display: swap; }
 /* Defaults match the Classic walnut theme; app.js overwrites them from themes.js. */
-:root { color-scheme: dark; --bg: #24231f; --surface: #2f2e29; --raised: #414039; --text: #f1eee5; --muted: #c4c0b3; --light: #ede2cd; --dark: #a78162; --accent: #ded5b9; --ink: #24251f; --danger: #f1b4a1; --selected: #d8d899; --coord-light: #101710; --coord-dark: #101710; --arrow-move: #040f06; --arrow-move2: #04300c; --arrow-move3: #044613; --arrow-threat: #4d2019; --target: #221a12; --arrow-eng1: #3000c2; --arrow-eng2: #4d3900; --arrow-eng3: #710068; --arrow-eng4: #004061; --arrow-eng5: #004617; --header: color-mix(in srgb, var(--bg) 82%, #000); --line: color-mix(in srgb, var(--text) 12%, transparent); --board-size: min(58vw,64vh,650px); --ease: cubic-bezier(.16,1,.3,1); font-family: 'Segoe UI',system-ui,sans-serif; font-synthesis: none; }
+:root { color-scheme: dark; --bg: #24231f; --surface: #2f2e29; --raised: #414039; --text: #f1eee5; --muted: #c4c0b3; --light: #ede2cd; --dark: #a78162; --accent: #ded5b9; --ink: #24251f; --danger: #f1b4a1; --selected: #d8d899; --coord-light: #101710; --coord-dark: #101710; --arrow-threat: #4d2019; --target: #221a12; --header: color-mix(in srgb, var(--bg) 82%, #000); --line: color-mix(in srgb, var(--text) 12%, transparent); --board-size: min(58vw,64vh,650px); --ease: cubic-bezier(.16,1,.3,1); font-family: 'Segoe UI',system-ui,sans-serif; font-synthesis: none; }
 :root[data-scheme='light'] { --header: var(--surface); }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); min-width: 300px; }
@@ -203,6 +203,14 @@ select { cursor: pointer; }
 .line .play { padding: 0; min-height: 40px; width: 35px; color: var(--accent); }.line .play svg { width: 14px; height: 14px; fill: currentColor; stroke: none; }
 .empty-note { margin: 18px 0; color: var(--muted); font-size: 12px; line-height: 1.6; }.empty-note.error { color: var(--danger); }
 .threats { margin-top: 18px; }.threats h3 { font-size: 12px; font-weight: 600; color: var(--danger); margin: 0 0 9px; }.threats h3 span { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 5px; }
+/* Engine colour band (Engines mode): a chip row under the board, always visible while the coach view is
+   on, so an arrow's colour is identified ON the board — the square is the exact arrow fill, the number
+   that engine's eval. The top-bar Engine picker keeps its own meaning (the single analysis engine). */
+.engine-band { margin: 8px 0 0 20px; display: flex; flex-wrap: wrap; gap: 6px; }
+.band-chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px; background: var(--raised); font-size: 12px; font-weight: 600; }
+.band-chip i { width: 13px; height: 13px; border-radius: 4px; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--text) 30%, transparent); }
+.band-chip b { font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.band-chip.dim { opacity: .55; }
 /* Engines-mode legend (the five-engine coach view): one row per registry engine, swatch in its arrow colour.
    Rows are buttons — hover/focus highlights that engine's arrow on the board; dim rows are skipped/pending. */
 .engine-votes { margin-top: 18px; }

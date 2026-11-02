@@ -23,7 +23,7 @@
     <div class="workspace">
       <section class="stage" aria-label="Chessboard workspace">
         <div class="player-row" id="topPlayer"><img src="pieces/bK.svg" alt="" width="32" height="32"><div><strong>Black</strong><span>Black pieces</span></div><span class="player-clock" role="timer" hidden></span><span class="player-turn"></span></div>
-        <div class="board-area">
+          <div class="board-area">
           <div class="evalwrap" role="img" aria-label="Position evaluation" id="evalWrap"><div class="evalbar"><div class="evalfill" id="evalFill"></div></div></div>
           <div class="board" id="board" role="grid" aria-label="Chessboard" aria-describedby="boardHelp" tabindex="0">
             <div class="squares" id="squares" role="rowgroup"></div>
@@ -32,6 +32,7 @@
             <span id="boardBadge" class="board-badge hidden" role="img"></span>
           </div>
         </div>
+        <div id="engineBand" class="engine-band hidden"></div>
         <div class="player-row" id="bottomPlayer"><img src="pieces/wK.svg" alt="" width="32" height="32"><div><strong>White</strong><span>White pieces</span></div><span class="player-clock" role="timer" hidden></span><span class="player-turn"></span></div>
         <div class="board-toolbar">
           <div class="board-actions">

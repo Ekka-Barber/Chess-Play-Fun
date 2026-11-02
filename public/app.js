@@ -427,11 +427,13 @@ function syncEngineName() {
   }
 }
 
-// The header picker lists every registered engine; capability gaps are handled server-side (pickEngines).
+// The header picker lists every registered engine, plus the coach view as the FIRST entry so the
+// all-engines mode is discoverable right where you pick engines. Capability gaps are handled server-side
+// (pickEngines); the coach entry is a client-side switch, not a settings change.
 function fillEngineSelect() {
   const pick = $('#engine');
   if (!engineRegistry || !pick) return;
-  pick.replaceChildren(...engineRegistry.engines.map((entry) => new Option(entry.name, entry.id)));
+  pick.replaceChildren(new Option('⟐ All five · engine votes', '__votes__'), ...engineRegistry.engines.map((entry) => new Option(entry.name, entry.id)));
   pick.value = game?.settings?.engineId ?? engineRegistry.defaultId;
 }
 
@@ -707,6 +709,7 @@ function renderPanels(force = false) {
     threats.append(el);
   }
   renderTablebase(fen);
+  renderEngineBand(sweepLive);
   renderEngineVotes(sweepLive);
   renderCoach(hintKey);
   renderMoves(); renderGraph(); renderReview();
@@ -920,27 +923,46 @@ function renderTablebase(fen) {
   body.replaceChildren(...tablebaseNodes(slot.data, fen));
 }
 
+// Arrow styling follows the reference boards, read from what they actually ship: chessground's brush
+// table (lichess) and chess.com's game-review arrows — SATURATED mid-tone colours drawn TRANSLUCENT with
+// fat shafts, so the live board stays visible under the annotation and the overlay reads as a layer, not
+// ink. Arrows are decorative annotations (the panel rows and the engine band carry the same facts as
+// text), so they deliberately trade a 3:1 contrast floor for this look. Colours are global, not themed:
+// an engine's colour is its identity on every board, exactly like the reference sites. Widths are
+// half-widths in the 0..800 viewBox (32 units ≈ 8% of the board — chessground's fat engine arrows).
+const ENGINE_PALETTE = [
+  { hue: '#1467c8' }, // slot 1 · Stockfish — blue
+  { hue: '#e68f00' }, // slot 2 · Berserk — amber (chessground yellow)
+  { hue: '#9333ea' }, // slot 3 · Obsidian — purple
+  { hue: '#d6218f' }, // slot 4 · PlentyChess — pink (chessground pink family)
+  { hue: '#15781b' }, // slot 5 · Viridithas — green (chessground green)
+];
+const ARROWS = {
+  best: { color: '#15781b', opacities: [0.8, 0.45, 0.28], widths: [36, 28, 22] }, // darker(more opaque) = stronger
+  threat: { color: '#882020', opacities: [0.55, 0.35], widths: [24, 18] },
+  engine: { opacity: 0.55, width: 32 },
+};
 // Pure arrow geometry shared by the best-line arrows and the five-engine view: the seven-point polygon for a
-// move at a given half-width, in board units (0..800). proj maps a square to its centre, so tests run this
+// move at a given half-width, in board units (0..800). The head scales with the shaft (chessground derives
+// both from lineWidth) so fat arrows get fat heads. proj maps a square to its centre, so tests run this
 // without a DOM.
 function arrowPoints(from, to, width, proj) {
   const [x, y] = proj(from), [tx, ty] = proj(to);
   const dx = tx - x, dy = ty - y, length = Math.hypot(dx, dy);
   if (!length) return null;
   const ux = dx / length, uy = dy / length, px = -uy, py = ux;
-  const sx = x + ux * 23, sy = y + uy * 23, ex = x + dx - ux * 36, ey = y + dy - uy * 36;
-  return [[sx + px * width, sy + py * width], [ex + px * width, ey + py * width], [ex + px * 25, ey + py * 25], [x + dx, y + dy], [ex - px * 25, ey - py * 25], [ex - px * width, ey - py * width], [sx - px * width, sy - py * width]];
+  const head = width * 1.55, start = width * 0.8, tip = width * 1.1;
+  const sx = x + ux * start, sy = y + uy * start, ex = x + dx - ux * tip, ey = y + dy - uy * tip;
+  return [[sx + px * width, sy + py * width], [ex + px * width, ey + py * width], [ex + px * head, ey + py * head], [x + dx, y + dy], [ex - px * head, ey - py * head], [ex - px * width, ey - py * width], [sx - px * width, sy - py * width]];
 }
 const PROJECT = (sq) => [col(sq) * 100 + 50, row(sq) * 100 + 50];
 // The five-engine overlay planner, pure so test/ui-contrast.test.js can exercise it headlessly (like BADGES):
 // groups engines that agree on the same move, spaces the group perpendicular to the arrow (biased toward the
-// board centre, where the room is), and clamps the spacing so no translated point can leave the 0..800 viewBox —
-// an arrowhead's base already spans +/-25 units, so a naive offset clips heads off the a/h files. Slot =
-// registry index: colour arrowEng<slot+1>, width 10-slot — a non-colour cue that survives midnight's near-black
-// luminance cap, where hue alone cannot separate five engines.
+// board centre, where the room is), and clamps the spacing so no translated point can leave the 0..800 viewBox.
+// The palette and style are passed in, keeping the block self-contained for extraction.
 const ENGINE_ARROWS = (() => {
-  const CENTRE = 400, STEP = 20;
-  const plan = (results, theme, proj) => {
+  const CENTRE = 400, STEP = 26;
+  const plan = (results, proj, palette, style) => {
     const groups = new Map();
     results.forEach((r, slot) => {
       if (!r.uci || r.skipped || r.error) return;
@@ -960,8 +982,8 @@ const ENGINE_ARROWS = (() => {
       const half = (list.length - 1) / 2;
       let step = 0;
       if (half) {
-        // Room for the widest arrow's bbox to travel along +/-perp before any corner leaves the viewBox.
-        const box = arrowPoints(from, to, 10, proj);
+        // Room for the widest arrow's bbox (head included) to travel along +/-perp before leaving the viewBox.
+        const box = arrowPoints(from, to, style.width, proj);
         const xs = box.map((p) => p[0]), ys = box.map((p) => p[1]);
         const room = (dx, dy) => {
           let best = Infinity;
@@ -972,10 +994,23 @@ const ENGINE_ARROWS = (() => {
         step = Math.max(0, Math.min(STEP, room(px, py) / half, room(-px, -py) / half));
       }
       list.forEach((member, k) => {
-        const points = arrowPoints(member.from, member.to, 10 - member.slot, proj);
+        const points = arrowPoints(member.from, member.to, style.width, proj);
         if (!points) return;
-        const off = (k - half) * step;
-        out.push({ id: `engine-${member.engineId}`, fill: theme[`arrowEng${member.slot + 1}`], points: points.map(([X, Y]) => [X + px * off, Y + py * off]) });
+        // Two separations keep agreeing fat arrows readable where perpendicular room runs out (the a/h
+        // files): a clamped sideways offset, and a stagger ALONG the arrow so each engine's arrow is also
+        // visibly longer or shorter than its neighbours. The combined translation is then scaled back per
+        // member until every corner stays inside the viewBox — on long diagonals the two shifts stack.
+        const off = (k - half) * step, drag = (k - half) * 7;
+        const len2 = Math.hypot(x1 - x0, y1 - y0) || 1, ax = (x1 - x0) / len2, ay = (y1 - y0) / len2;
+        const shiftX = px * off + ax * drag, shiftY = py * off + ay * drag;
+        const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
+        let scale = 1;
+        if (shiftX > 1e-9) scale = Math.min(scale, (800 - Math.max(...xs)) / shiftX);
+        else if (shiftX < -1e-9) scale = Math.min(scale, Math.min(...xs) / -shiftX);
+        if (shiftY > 1e-9) scale = Math.min(scale, (800 - Math.max(...ys)) / shiftY);
+        else if (shiftY < -1e-9) scale = Math.min(scale, Math.min(...ys) / -shiftY);
+        scale = Math.max(0, scale);
+        out.push({ id: `engine-${member.engineId}`, fill: palette[member.slot % palette.length].hue, opacity: style.opacity, points: points.map(([X, Y]) => [X + shiftX * scale, Y + shiftY * scale]) });
       });
     }
     return out;
@@ -990,26 +1025,41 @@ function arrow(from, to, color, opacity, id, width = 12) {
 function drawArrows(live, sweepLive) {
   let content = '';
   if (arrowMode === 'engines' && sweepLive) {
-    // One arrow per engine's first choice, coloured by registry slot; agreement shows as parallel arrows, never
-    // a merge — each engine's answer stays traceable to its legend row. Opaque fills >=3:1 on both squares.
-    content = ENGINE_ARROWS.plan(sweepLive.results, THEMES[themeKey], PROJECT)
-      .map(({ id, fill, points }) => `<polygon id="${id}" points="${points.map((p) => p.join(',')).join(' ')}" fill="${fill}"/>`)
+    // One arrow per engine's first choice in that engine's colour; agreement shows as parallel arrows, never
+    // a merge — each answer stays traceable to its colour band chip and legend row.
+    content = ENGINE_ARROWS.plan(sweepLive.results, PROJECT, ENGINE_PALETTE, ARROWS.engine)
+      .map(({ id, fill, opacity, points }) => `<polygon id="${id}" points="${points.map((p) => p.join(',')).join(' ')}" fill="${fill}" opacity="${opacity}"/>`)
       .join('');
   } else if (arrowMode === 'best' && live) {
-    // Solid per-theme fills measured as composited (>=3:1 on both square colours, pinned by test): the top-3
-    // engine lines ladder width AND tint across each theme's whole legal contrast band — rank 1 darkest/thickest
-    // at ~0.93x the pure-black ceiling, rank 3 the lightest legal tint — so darker reads as stronger at a
-    // glance. Threat arrows sit at 7/5, widths no suggestion uses, so the families separate by size as well
-    // as hue (never by hue alone).
-    const theme = THEMES[themeKey];
-    const moveTints = [theme.arrowMove, theme.arrowMove2, theme.arrowMove3];
-    live.lines.slice(0, 3).forEach((line, i) => { content += arrow(line.from, line.displayTo || line.to, moveTints[i], 1, `suggestion-${i}`, 12 - i * 2); });
-    live.threats.slice(0, 2).forEach((line, i) => { content += arrow(line.from, line.displayTo || line.to, theme.arrowThreat, 1, `threat-${i}`, 7 - i * 2); });
+    // The best-line ladder: one vivid green at THREE translucencies — rank 1 nearly solid, rank 3 a breath —
+    // plus width 36/28/22, so darker-and-thicker reads as stronger at a glance (the encoding this app has
+    // carried since its first version, now in the reference boards' palette). Threats are the same idea in
+    // chessground red, thinner so the two families never compete.
+    live.lines.slice(0, 3).forEach((line, i) => { content += arrow(line.from, line.displayTo || line.to, ARROWS.best.color, ARROWS.best.opacities[i], `suggestion-${i}`, ARROWS.best.widths[i]); });
+    live.threats.slice(0, 2).forEach((line, i) => { content += arrow(line.from, line.displayTo || line.to, ARROWS.threat.color, ARROWS.threat.opacities[i], `threat-${i}`, ARROWS.threat.widths[i]); });
   }
   if ($('#arrows').innerHTML !== content) $('#arrows').innerHTML = content;
 }
 function hotArrow(id, on) { document.getElementById(id)?.classList.toggle('hot', on); }
 
+// The on-board colour band: one chip per engine under the board, always visible in Engines mode, so an
+// arrow's colour is identified ON the board — the chip's square is the exact arrow fill and the number is
+// that engine's eval (… while it thinks, — when it cannot answer).
+function renderEngineBand(sweepLive) {
+  const band = $('#engineBand');
+  const show = arrowMode === 'engines';
+  band.classList.toggle('hidden', !show);
+  if (!show) return;
+  const rows = sweepLive?.results ?? (engineRegistry?.engines ?? []).map((entry) => ({ engineId: entry.id, name: entry.name }));
+  band.replaceChildren(...rows.map((r, slot) => {
+    const chip = document.createElement('span');
+    const color = ENGINE_PALETTE[slot % ENGINE_PALETTE.length].hue;
+    const detail = r.error ? '✕' : r.skipped ? '—' : r.uci ? r.text : '…';
+    chip.className = 'band-chip' + ((r.skipped || r.error) && !r.uci ? ' dim' : '');
+    chip.innerHTML = `<i style="background:${color}"></i>${r.name.split(' ')[0]}<b>${detail}</b>`;
+    return chip;
+  }));
+}
 // The Engines-mode legend: one row per registry engine — swatch in its arrow colour, SAN, eval, depth — plus
 // skipped (no Chess960 / game over), errored and pending rows, a running count, and the paused note. Rows are
 // buttons so hover/focus highlights that engine's arrow on the board.
@@ -1025,7 +1075,7 @@ function renderEngineVotes(sweepLive) {
     const detail = r.error ? r.error : r.skipped ? (r.skipped === 'chess960' ? 'no Chess960' : r.skipped)
       : r.uci ? `${r.san} · ${r.text}${r.depth ? ` · d${r.depth}` : ''}` : '…';
     el.className = 'engine-vote' + ((r.skipped || !r.uci) && !r.error ? ' dim' : '');
-    el.innerHTML = `<span class="swatch" style="background:var(--arrow-eng${slot + 1})"></span><strong>${r.name}</strong><span class="vote-detail">${detail}</span>`;
+    el.innerHTML = `<span class="swatch" style="background:${ENGINE_PALETTE[slot % ENGINE_PALETTE.length].hue}"></span><strong>${r.name}</strong><span class="vote-detail">${detail}</span>`;
     el.setAttribute('aria-label', `${r.name}: ${detail}`);
     el.onmouseenter = () => hotArrow(`engine-${r.engineId}`, true);
     el.onmouseleave = () => hotArrow(`engine-${r.engineId}`, false);
@@ -1037,7 +1087,7 @@ function renderEngineVotes(sweepLive) {
   text($('#engineVotesNote'), sweepLive.terminal ? 'Game over — no moves to suggest.'
     : sweepLive.phase === 'paused' ? 'Paused while this tab was hidden.'
     : sweepLive.phase === 'running' ? `${done} of ${sweepLive.results.length} engines answered…`
-    : 'Each engine asked for 300 ms, one at a time. Arrows also narrow left to right.');
+    : 'Each engine asked for 300 ms, one at a time. Colours match the band under the board.');
 }
 
 // The move sheet is append-mostly, so it renders incrementally: while the logged plies still extend what is
@@ -1641,7 +1691,20 @@ $('#theme').onchange = () => { applyTheme($('#theme').value); api('settings', { 
 $('#power').onchange = () => api('settings', { powerMode: $('#power').value }).catch((error) => notify(error.message, true));
 // So is the engine pick: the server re-aims its processes (with Stockfish filling any capability gap) and the
 // next poll brings back the name and any notice.
-$('#engine').onchange = () => api('settings', { engineId: $('#engine').value }).catch((error) => notify(error.message, true));
+$('#engine').onchange = () => {
+  if ($('#engine').value === '__votes__') {
+    // The top-bar door into the coach view: every engine answers with its own coloured arrow (the band
+    // under the board names the colours). The picker snaps back to the single analysis engine, which
+    // still drives Best mode, grading and play.
+    $('#engine').value = game?.settings?.engineId ?? engineRegistry?.defaultId ?? 'stockfish';
+    if (arrowMode !== 'engines') { setArrowMode('engines'); scheduleSweep(); renderPanels(true); }
+    notify('Engine votes: every engine answers with its own coloured arrow.');
+    return;
+  }
+  // Picking a single engine leaves the coach view; Best mode and everything else follow the choice.
+  if (arrowMode === 'engines') { stopSweepRemote(); setArrowMode('best'); renderPanels(true); }
+  api('settings', { engineId: $('#engine').value }).catch((error) => notify(error.message, true));
+};
 // And so is Online, the local-first opt-in: one POST, the next poll syncs the switch back. Enabling fetches
 // the position on screen once, immediately; disabling forgets every cached answer so nothing online lingers.
 async function setOnline(on) {

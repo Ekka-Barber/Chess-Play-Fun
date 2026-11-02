@@ -42,17 +42,17 @@ A local chess workspace that respects your laptop.</p>
 | **Watch the clock** | Optional — 3+2, 5+0, 10+0 or custom (1–180 min · Fischer increment); lives in this tab only (a reload drops it), and a takeback rewinds it to the exact snapshot |
 | **Spice it up** | **Random top-5** mode: the engine picks from its best ideas at random, with a *survival mode* that snaps to full strength when it gets into trouble |
 | **Improve** | Every move graded `Brilliant !!` → `Blunder ??` with a plain-language explanation, the refutation, and the better move |
-| **See the ideas** | Ranked arrows on the board: the engine's top-3 suggestions shade-laddered **darker = stronger → lighter = weaker** (each rung a verified ≥1.10× perceptual step that still clears 3:1 on both square colours), plus the top-2 threats |
-| **Compare the engines** | The Arrows button cycles **Off → Best → Engines**: in Engines mode every registered engine casts one coloured first-choice arrow — five opinions on one board, asked strictly one at a time, with a hoverable legend of each engine's move, eval and depth |
+| **See the ideas** | Ranked arrows on the board, the reference-site way: one vivid green at three translucencies — near-solid for the best move down to a breath for rank 3 — plus slim red threats, all fat, all translucent, so the live board stays visible under the annotation |
+| **Compare the engines** | Pick **⟐ All five · engine votes** in the top-bar Engine menu (or cycle the Arrows button): every registered engine casts one coloured first-choice arrow — five opinions on one board, asked strictly one at a time — with an always-on **colour band under the board** naming each engine's colour and eval, plus a hoverable detail legend |
 | **Review** | Lichess-formula accuracy, a clickable winning-chances graph, key moments — and **Retry**: the board rewinds to your mistake and you must find the right move, judged to within 5% winning chances |
 | **Collect** | Every brilliant move auto-saved as a shareable 1024×1240 board image + PGN + metadata, in a restorable gallery |
 | **Be different** | Six board themes, drag & drop, click-to-move, full keyboard play, Chess960 (positions 0–959) |
 
 ## 📸 The app, for real
 
-| Ranked best-line arrows — the shade ladder | Engine votes — five engines, five colours |
+| Ranked best-line arrows — the translucent ladder | Engine votes — five engines, five colours, one band |
 |---|---|
-| <img src="assets/screens/app-analysis.png" width="100%" alt="The analysis board: top-3 suggestion arrows in a dark-to-light green shade ladder plus threat arrows, with the best-lines panel"> | <img src="assets/screens/app-engine-votes.png" width="100%" alt="The Engines coach view: one coloured first-choice arrow per engine with a legend of each engine's move and evaluation"> |
+| <img src="assets/screens/app-analysis.png" width="100%" alt="The analysis board: top-3 suggestion arrows in a translucent vivid-green ladder plus slim threat arrows, with the best-lines panel"> | <img src="assets/screens/app-engine-votes.png" width="100%" alt="The Engines coach view: one coloured first-choice arrow per engine with the colour band naming each engine under the board"> |
 
 Both captured from the running app (`scripts/capture-screens.mjs`) — arrows and legends are the real UI, not mock-ups.
 
@@ -145,7 +145,7 @@ Answers land in a disk cache (`.cache/online/`): cloud evals expire after 24 h, 
 |---|---|
 | Themes | 6 (walnut · forest · ocean · ivory · midnight · rosewood), remembered |
 | Clocks | Off by default · 3+2 / 5+0 / 10+0 / custom 1–180 min + 0–60 s Fischer · this tab only — never posted, a reload drops it · takeback rewinds to the exact snapshot |
-| Arrows | Tri-state Arrows button: **Off → Best → Engines** · Best = top-3 suggestions on a verified darker-stronger shade ladder + top-2 threats at their own widths · Engines = one coloured first-choice arrow per registered engine (sequential 300 ms asks, hover legend, agreement shown as parallel arrows; engines without Chess960 are marked, never faked) · auto-off while an engine plays your side |
+| Arrows | Tri-state Arrows button: **Off → Best → Engines** · Best = top-3 suggestions on a translucent vivid ladder (darker = stronger) + slim threats · Engines = one coloured first-choice arrow per registered engine, a colour band under the board naming every engine, agreement shown as staggered parallel arrows (engines without Chess960 are marked, never faked) · also reachable from the top-bar Engine menu · auto-off while an engine plays your side |
 | Input | Drag & drop · click-to-move · touch · full keyboard |
 | Keyboard | Arrows move · <kbd>Enter</kbd>/<kbd>Space</kbd> select · <kbd>Esc</kbd> cancel · <kbd>←</kbd>/<kbd>→</kbd> history · <kbd>Home</kbd>/<kbd>End</kbd> ends · <kbd>F</kbd> flip |
 | Accessibility | Labelled grid · roving tabindex · visible focus · reduced motion · contrast enforced by a test that parses the source |
@@ -166,7 +166,7 @@ Answers land in a disk cache (`.cache/online/`): cloud evals expire after 24 h, 
 npm test   # 107 tests: rules, Chess960 castling, clocks, grading, governor, engines, online lookups, the five-engine sweep, contrast
 ```
 
-Covers chess rules (en passant, underpromotion, Chess960 castling), stale-request safety, engine turn handling, review and retry judging, Brilliant detection, the governor's slot and idle-quit behaviour, engine capability fallbacks, clock math (increments, flags, takeback rewinds), the online opt-in with its never-a-proxy guard, the five-engine sweep (membership and revision guards, terminal positions, pause/stop/restore lifecycles), and a test that **recomputes WCAG contrast ratios from the source** — every overlay measured as composited, the arrow ladder's perceptual steps floored at 1.10×, and the five engine hues' pairwise separation enforced, so a theme change can never quietly ship an invisible or indistinguishable overlay.
+Covers chess rules (en passant, underpromotion, Chess960 castling), stale-request safety, engine turn handling, review and retry judging, Brilliant detection, the governor's slot and idle-quit behaviour, engine capability fallbacks, clock math (increments, flags, takeback rewinds), the online opt-in with its never-a-proxy guard, the five-engine sweep (membership and revision guards, terminal positions, pause/stop/restore lifecycles), and a colour-law test with two layers: **arrows are pinned to the reference-board vivid-translucent profile** (saturated mid-tones, never contrast-black; the best-line ladder descends in opacity and width; the five engine hues stay pairwise hue-separated) while **essential overlays keep hard WCAG floors** (legal-move dot, check disc, last-move ring ≥3:1 composited on both squares of every theme, badges included).
 
 ## 🗺️ Roadmap
 
