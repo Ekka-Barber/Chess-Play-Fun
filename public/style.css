@@ -81,14 +81,14 @@ h1 { margin: 0; font-family: Sentient,Georgia,serif; font-size: 29px; line-heigh
 .pieces,.arrows { pointer-events: none; }
 .piece { position: absolute; top: 0; left: 0; width: 12.5%; height: 12.5%; display: grid; place-items: center; transition: transform .17s var(--ease); }
 .piece img,#ghost img { width: 87%; height: 87%; -webkit-user-drag: none; user-select: none; }
-/* Arrows are solid per-theme fills (>=3:1 on both square colours), so the hot state cannot dim
-   them back under the ratio - it emphasizes with an accent glow instead of transparency. */
-.arrows { z-index: 3; }.arrows polygon { transition: opacity .15s, filter .15s; }.arrows polygon.hot { filter: drop-shadow(0 0 4px var(--accent)); }
+/* Isolate the hovered engine's move without adding a halo over the pieces. */
+.arrows { z-index: 3; }.arrows polygon { transition: opacity .15s; }.arrows polygon.hot { opacity: 1; }
+.arrows:has(.hot) polygon:not(.hot) { opacity: .16; }
 .board.dragging,.board.dragging .square { cursor: grabbing; }
 .square.movable { cursor: grab; }
 #ghost { display: none; position: fixed; pointer-events: none; z-index: 50; place-items: center; }
 .board-badge { position: absolute; z-index: 4; width: max(22px,4.6%); aspect-ratio: 1; transform: translate(-62%,-38%); pointer-events: none; animation: badge-in .22s var(--ease); }
-@keyframes badge-in { from { transform: translate(-62%,-38%) scale(.4); opacity: 0; } }
+@keyframes badge-in { from { transform: translate(-62%,-38%) scale(.8); } }
 /* stroke: none stops the toolbar's `button svg` line style leaking into badges inside move buttons. */
 .board-badge svg,.badge svg { display: block; width: 100%; height: 100%; stroke: none; filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / .4)); }
 .evalwrap { height: 100%; }.evalbar { height: 100%; background: #101410; border-radius: 3px; overflow: hidden; display: flex; align-items: end; }
@@ -206,9 +206,9 @@ select { cursor: pointer; }
 /* Engine colour band (Engines mode): a chip row under the board, always visible while the coach view is
    on, so an arrow's colour is identified ON the board — the square is the exact arrow fill, the number
    that engine's eval. The top-bar Engine picker keeps its own meaning (the single analysis engine). */
-.engine-band { margin: 8px 0 0 20px; display: flex; flex-wrap: wrap; gap: 6px; }
-.band-chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px; background: var(--raised); font-size: 12px; font-weight: 600; }
-.band-chip i { width: 13px; height: 13px; border-radius: 4px; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--text) 30%, transparent); }
+.engine-band { margin: 8px 0 0 20px; display: grid; grid-template-columns: repeat(auto-fit,minmax(120px,1fr)); gap: 4px 12px; }
+.band-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 0; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.band-chip i { flex: none; width: 13px; height: 13px; border-radius: 2px; }
 .band-chip b { font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
 .band-chip.dim { opacity: .55; }
 /* Engines-mode legend (the five-engine coach view): one row per registry engine, swatch in its arrow colour.
@@ -297,7 +297,7 @@ dialog { color: var(--text); background: var(--surface); border: 0; border-radiu
      deep review, moment scope), moment prev/next, the moment primary actions and the grade-count
      buttons. Graph markers stay 24px - they pin to positions on the graph and the whole graph is a
      larger scrub target. */
-  .text-action,.moment-nav button:not(.text-action),.moment-primary,.review-table td button { min-height: 44px; }.nav button { width: 36px; }.app-footer { align-items: start; line-height: 1.7; }.app-footer > span:last-child { white-space: nowrap; }.footer-shortcut { display: none; } }
+  .text-action,.moment-nav button:not(.text-action),.moment-primary,.review-table td button,.engine-vote { min-height: 44px; }.nav button { width: 36px; }.app-footer { align-items: start; line-height: 1.7; }.app-footer > span:last-child { white-space: nowrap; }.footer-shortcut { display: none; } }
 @media (max-width:520px) { .setup-grid { grid-template-columns: 1fr; }#collection > span:not(#collectionCount) { display: none; } }
 /* Short landscape viewports (phones, mostly): the board must fit the viewport HEIGHT, not just the
    column width - the 650px mobile size and the 350px desktop floor both assumed a taller window and

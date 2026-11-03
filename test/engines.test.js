@@ -53,7 +53,7 @@ test("Stockfish fills capability gaps with a notice", () => {
   // Chess960 analysis falls back for an engine without UCI_Chess960.
   const nine60 = pickEngines(obsidian, { mode: "free", strength: 100, variant: "chess960" });
   assert.equal(nine60.analysis.id, "stockfish");
-  assert.equal(nine60.playing.id, "obsidian");
+  assert.equal(nine60.playing.id, "stockfish");
   assert.match(nine60.notices[0], /Chess960/);
   // A single-line engine cannot feed grading, threats or variety, so analysis falls back entirely.
   const single = pickEngines(viridithas, { mode: "free", strength: 100, variant: "standard" });

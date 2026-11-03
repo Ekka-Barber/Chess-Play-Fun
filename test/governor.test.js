@@ -57,6 +57,22 @@ function uciProc({ goDelay = 0 } = {}) {
   return proc;
 }
 
+test('UCI previews contain real PVs before bestmove and ignore info string diagnostics', async () => {
+  const e = new Engine({ idleMs: 0 });
+  const updates = [];
+  let finished = false;
+  e.start = async () => {};
+  e.send = command => {
+    if (!command.startsWith('go ')) return;
+    e.feed('info string max 300 depth 200 timeset 1\n');
+    e.feed('info depth 8 multipv 1 score cp 25 nodes 100 nps 2000 pv e2e4 e7e5\n');
+    setTimeout(() => { finished = true; e.feed('bestmove e2e4\n'); }, 30);
+  };
+  const raw = await e.go(startFen(), 1, 300, { onUpdate: update => updates.push({ ...update, finished }) });
+  assert.equal(raw.depth, 8, 'a debug string is not a searched depth');
+  assert.ok(updates.some(update => !update.finished && update.lines?.[0]?.pv[0] === 'e2e4'), 'publish a legal PV during search');
+});
+
 test('governor budgets: full 3/2/3 below_normal deep, balanced 2/2/2 idle (today\'s hashes), laptop 1/1/1 idle', () => {
   const full = createGovernor({ mode: 'full' });
   assert.deepEqual(full.budgets, { analysis: 3, playing: 2, deep: 3 });
@@ -254,9 +270,8 @@ test('pause follows the {hidden} contract: tab is optional, a present tab must b
   assert.equal((await state()).governor.paused, true);
   await post('pause', { hidden: true, tab: '' }, 400);
   await post('pause', { hidden: false, tab: 't', hello: 'no' }, 400);
-  // hello speaks only for its own tab: it releases THIS tab, never another tab's pause (the old
-  // clear-everything hello wiped other hidden tabs' pauses — the multi-tab audit finding).
-  assert.deepEqual(await post('pause', { hidden: false, tab: 't', hello: true }), { ok: true, paused: true });
+  // A visible tab resumes analysis without discarding another tab's hidden lease.
+  assert.deepEqual(await post('pause', { hidden: false, tab: 't', hello: true }), { ok: true, paused: false });
   await post('pause', { hidden: false }); // the synthetic '(untabbed)' key the bare {hidden:true} used
   assert.deepEqual(await post('pause', { hidden: false, tab: 't', hello: true }), { ok: true, paused: false });
 });
@@ -283,7 +298,7 @@ test('pausing mid-analysis freezes the panel at paused (never error) and un-hide
     engine.go = go;
   }
 });
-test('two hidden tabs keep analysis paused while Stockfish still replies; the last un-hide resumes at the live tail', async () => {
+test('two hidden tabs pause analysis while Stockfish replies; the first visible tab resumes at the live tail', async () => {
   await post('new', { mode: 'engine', humanColor: 'b', strength: 30 });
   let game; for (let i = 0; i < 100 && (game = await state()).moveLog.length < 1; i++) await delay(20);
   const reply = game.legalMoves[0];
@@ -301,12 +316,12 @@ test('two hidden tabs keep analysis paused while Stockfish still replies; the la
     assert.equal(game.moveLog[2].engine, true);
     assert.equal(playingInterrupts, 0, 'pause never interrupted the playing engine');
     await post('pause', { hidden: false, tab: 'a' });
-    assert.equal((await state()).governor.paused, true, 'one tab still hidden keeps analysis paused');
-    assert.equal((await analysisOf()).phase, 'paused');
+    assert.equal((await state()).governor.paused, false, 'one visible tab needs analysis even while another is hidden');
+    assert.notEqual((await analysisOf()).phase, 'paused');
     await post('pause', { hidden: false, tab: 'b' });
     assert.equal((await state()).governor.paused, false);
     const report = await waitFor(async () => { const r = await analysisOf(); return r.phase === 'ready' && r.ply === 3 ? r : null; });
-    assert.ok(report, 'analysis resumed after the last un-hide');
+    assert.ok(report, 'analysis resumed after a tab became visible');
     assert.equal(report.ply, 3, `resumed at the live tail (3), not the hide-time ply (${hidePly})`);
   } finally {
     playingEngine.interrupt = playingInterrupt;
@@ -322,18 +337,28 @@ test('any user action clears the pause set and analysis resumes', async () => {
   const report = await waitFor(async () => { const r = await analysisOf(); return r.phase === 'ready' && r.ply === 1 ? r : null; });
   assert.ok(report, 'analysis resumed at the new tail');
 });
-test('a crashed page\'s stale pause is healed by the TTL, never by another tab\'s hello', async () => {
+test('visibility leases survive another hello and stale leases expire through normal polls', async () => {
   const { prunePausedTabs, PAUSE_TTL } = require('../server');
   await post('new');
   await post('pause', { hidden: true, tab: 'crashed-without-pagehide' });
   assert.equal((await state()).governor.paused, true);
-  // A fresh page load must NOT heal it — that whole-set wipe was the multi-tab bug. The entry self-expires.
   await post('pause', { hidden: false, tab: 'fresh-page', hello: true });
-  assert.equal((await state()).governor.paused, true, 'hello reports only its own tab');
+  assert.equal((await state()).governor.paused, false, 'a visible page resumes analysis');
+  await post('pause', { hidden: false, tab: 'fresh-page', bye: true });
+  assert.equal((await state()).governor.paused, true, 'closing the visible page preserves the hidden page lease');
   prunePausedTabs(Date.now() + PAUSE_TTL + 1);
   assert.equal((await state()).governor.paused, false, 'the stale entry expired with the TTL');
-  await post('pause', { hidden: true, tab: 'probe' }); // a normal hide/un-hide cycle resumes analysis
-  await post('pause', { hidden: false, tab: 'probe' });
   const report = await waitFor(async () => { const r = await analysisOf(); return r.phase === 'ready' && r.ply === 0 ? r : null; });
-  assert.ok(report, 'analysis resumed at the tail after the stale pause expired');
+  assert.ok(report, 'normal polling resumed the tail after expiry without another visibility event');
+});
+
+test('a visible poll heals a missed visibility message without erasing hidden tabs', async () => {
+  await post('new');
+  await post('pause', { hidden: true, tab: 'hidden' });
+  const visible = await fetch(`${origin}/api/analysis?tab=visible&visible=true`).then(r => r.json());
+  assert.equal(visible.game.governor.paused, false);
+  await post('pause', { hidden: false, tab: 'visible', bye: true });
+  assert.equal((await state()).governor.paused, true, 'the hidden lease was retained');
+  await post('pause', { hidden: false, tab: 'hidden' });
+  await post('pause', { hidden: false, tab: 'hidden', bye: 'yes' }, 400);
 });

@@ -2,7 +2,7 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { Chess } = require('chess.js');
 const { request } = require('node:http');
-const { app, engine, playingEngine, reviewEngine, timing, prettyLine, scoreText, mkLine } = require('../server');
+const { app, engine, playingEngine, reviewEngine, archive, timing, prettyLine, scoreText, mkLine } = require('../server');
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let server, origin;
 // Deterministic UCI boundary; browser verification uses the real executable.
@@ -27,6 +27,48 @@ async function post(path, body = {}, status = 200) {
 const state = () => fetch(`${origin}/api/state`).then((r) => r.json());
 async function moves(sequence) { let result; for (const uci of sequence.split(' ')) result = await post('move', { from: uci.slice(0,2), to: uci.slice(2,4), ...(uci[4] ? { promotion: uci[4] } : {}) }); return result; }
 
+test('next suggestions precede grading and previews stay out of the completed-result cache', async () => {
+  const original = engine.go, calls = [];
+  engine.go = async (fen, multipv, ms, options = {}) => {
+    calls.push({ fen, multipv });
+    const raw = await original(fen);
+    options.onUpdate?.(raw);
+    await delay(60);
+    return raw;
+  };
+  try {
+    await post('new', { mode: 'free', engineSide: null, variant: 'standard' });
+    const game = await moves('a2a3');
+    for (let i = 0; i < 50 && calls.length < 2; i++) await delay(5);
+    assert.equal(calls[1]?.fen, game.fens[1], 'search the displayed position before the ungraded pre-position');
+    const preview = await fetch(`${origin}/api/analysis`).then(r => r.json());
+    assert.equal(preview.phase, 'thinking');
+    assert.ok(preview.lines[0]?.san, 'preview PVs use the normal client line format');
+    await fetch(`${origin}/api/hint?ply=1`).then(r => assert.equal(r.status, 409, 'partial results cannot judge a hint or retry'));
+    await engine.chain;
+    const completed = await fetch(`${origin}/api/analysis`).then(r => r.json());
+    assert.equal(completed.phase, 'ready');
+    assert.ok((await state()).annotations.every(a => a.type !== 'pending'), 'grading still completes');
+  } finally { engine.go = original; }
+});
+
+test('switching engines searches again instead of relabelling another engine cache', async t => {
+  const registry = await fetch(`${origin}/api/engines`).then(r => r.json());
+  const alternative = registry.engines.find(e => e.id !== 'stockfish' && e.multipv);
+  if (!alternative) return t.skip('No alternative engine installed');
+  const original = engine.go, calls = [];
+  engine.go = async (...args) => { calls.push(args); return original(...args); };
+  try {
+    await post('settings', { engineId: 'stockfish' });
+    const game = await post('new', { mode: 'free', engineSide: null, variant: 'standard' });
+    await engine.chain;
+    calls.length = 0;
+    await post('settings', { engineId: alternative.id });
+    await engine.chain;
+    assert.ok(calls.some(([fen, multipv]) => fen === game.fens[0] && multipv === 3), 'new engine must compute its own result');
+  } finally { engine.go = original; await post('settings', { engineId: 'stockfish' }); await engine.chain; }
+});
+
 test('invalid branches preserve the complete game; valid branches truncate atomically', async () => {
   await post('new'); const original = await moves('e2e4 e7e5 g1f3');
   await post('move', { from:'a3', to:'a4', atPly:1 }, 400);
@@ -40,6 +82,36 @@ test('stale revisions cannot overwrite the board', async () => {
   const original = await post('new'); await moves('e2e4');
   await post('move', { from:'d2', to:'d4', atPly:0, revision:original.revision, baseFen:original.fens[0] },409);
   assert.equal((await state()).moveLog.length,1);
+});
+
+test('restore cannot overwrite a move made while the archive is loading', async () => {
+  const game = await post('new');
+  const original = archive.get;
+  let release, entered;
+  const ready = new Promise(resolve => { entered = resolve; });
+  const loading = new Promise(resolve => { release = resolve; });
+  archive.get = async () => {
+    entered(); await loading;
+    return { startFen: game.fens[0], moves: [{ uci: 'e2e4' }], variant: 'standard', seed: 518, ply: 1, annotation: { type: 'brilliant' } };
+  };
+  try {
+    const restoring = post('restore', { id: 'saved', revision: game.revision }, 409);
+    await ready;
+    const moved = await moves('a2a3');
+    release(); await restoring;
+    assert.deepEqual((await state()).fens, moved.fens);
+  } finally { release(); archive.get = original; }
+});
+
+test('retry results are rejected when an undo changes the position during judging', async () => {
+  await post('new', { mode: 'free', engineSide: null });
+  await moves('a2a3 a7a6');
+  await engine.chain;
+  const judging = post('try', { ply: 0, from: 'b2', to: 'b3' }, 409);
+  await delay(25);
+  const undone = await post('undo');
+  await judging;
+  assert.deepEqual((await state()).fens, undone.fens);
 });
 test('castling and en passant preserve the complete legal position', async () => {
   await post('new'); let result = await moves('e2e4 e7e5 g1f3 b8c6 f1c4 g8f6 e1g1');
@@ -99,22 +171,21 @@ test('engine mode replies for Stockfish and blocks the human on its turn', async
   await post('new', { strength:55 }, 400);
   await post('new', { mode:'free', humanColor:'w', strength:50 });
 });
-test('free play can hand one side to full-strength Stockfish, which pauses before moving', async () => {
-  const go = playingEngine.go, skills = [];
-  playingEngine.go = (...args) => { skills.push(args[3].skill); return go(...args); };
-  timing.replyDelay = () => 600;
+test('free play commits full-strength replies without an artificial pause and preserves search budgets', async () => {
+  const go = playingEngine.go, thinkTime = timing.thinkTime, skills = [], budgets = [];
+  playingEngine.go = (...args) => { skills.push(args[3].skill); budgets.push(args[2]); return go(...args); };
+  timing.thinkTime = () => 9000;
   try {
     await post('new', { mode:'free', engineSide:'b' });
     await post('move', { from:'e2', to:'e4' });
-    const movedAt = Date.now();
     assert.equal((await post('move', { from:'e7', to:'e5' }, 400)).code,'ILLEGAL_MOVE');
-    let game; for (let i = 0; i < 150 && (game = await state()).moveLog.length < 2; i++) await delay(20);
-    // The 600 ms pause starts just before the move response, so allow some request latency.
-    assert.ok(Date.now() - movedAt >= 450, 'Stockfish paused before replying');
+    let game; for (let i = 0; i < 60 && (game = await state()).moveLog.length < 2; i++) await delay(20);
+    assert.equal(game.moveLog.length, 2, 'a finished search is committed without the old 9-second pause');
+    assert.deepEqual(budgets, [3000], 'the full-strength search budget is unchanged');
     assert.equal(game.moveLog[1].engine,true); assert.deepEqual(skills,[20]);
     assert.equal((await post('new', { mode:'engine', engineSide:'b' })).settings.engineSide,null);
   } finally {
-    playingEngine.go = go;
+    playingEngine.go = go; timing.thinkTime = thinkTime;
     await post('new', { mode:'free', engineSide:null, humanColor:'w', strength:50 });
   }
 });
@@ -123,7 +194,7 @@ test('free-play Stockfish: best move by default; Random top-5 picks randomly, pl
     const five = timing.pick(5), two = timing.pick(2);
     assert.ok(Number.isInteger(five) && five >= 0 && five <= 4); assert.ok(two >= 0 && two <= 1);
   }
-  const go = playingEngine.go, pick = timing.pick, replyDelay = timing.replyDelay;
+  const go = playingEngine.go, pick = timing.pick, thinkTime = timing.thinkTime;
   const legal = (fen) => new Chess(fen).moves({ verbose:true }).slice(0, 5).map((m) => m.from + m.to + (m.promotion || ''));
   const cp = (value) => ({ type:'cp', value }), mate = (value) => ({ type:'mate', value }), calls = [];
   let scores;
@@ -134,7 +205,7 @@ test('free-play Stockfish: best move by default; Random top-5 picks randomly, pl
     return { lines: moves.slice(0, lines).map((uci, i) => ({ score: scores[i] ?? scores.at(-1), pv:[uci] })), depth:12, nps:1, best:moves[0] };
   };
   timing.pick = (count) => Math.min(3, count - 1);
-  timing.replyDelay = () => 0;
+  timing.thinkTime = () => 0;
   const engineMove = async (n) => { let game; for (let i = 0; i < 100 && (game = await state()).moveLog.length < n; i++) await delay(20); return game; };
   const opening = (variety, lineScores) => { scores = lineScores; return post('new', { mode:'free', engineSide:'w', variety }).then(() => engineMove(1)); };
   const reply = async (n) => { const game = await state(); await post('move', { from:game.legalMoves[0].from, to:game.legalMoves[0].to }); return engineMove(n); };
@@ -164,14 +235,14 @@ test('free-play Stockfish: best move by default; Random top-5 picks randomly, pl
     game = await reply(7);
     assert.equal(calls.at(-1).lines,5); assert.equal(game.moveLog[6].uci,legal(game.fens[6])[3]);
   } finally {
-    playingEngine.go = go; timing.pick = pick; timing.replyDelay = replyDelay;
+    playingEngine.go = go; timing.pick = pick; timing.thinkTime = thinkTime;
     await post('new', { mode:'free', engineSide:null, variety:false });
   }
 });
 test('free play takeback removes one move, pauses Stockfish, and resumes on request or your next move', async () => {
-  const original = timing.replyDelay;
+  const original = timing.thinkTime;
   const plies = async (n) => { let game; for (let i = 0; i < 100 && (game = await state()).moveLog.length !== n; i++) await delay(20); return game; };
-  timing.replyDelay = () => 0;
+  timing.thinkTime = () => 0;
   try {
     await post('new', { mode:'free', engineSide:'w' });
     let game = await plies(1);
@@ -191,7 +262,7 @@ test('free play takeback removes one move, pauses Stockfish, and resumes on requ
     game = await plies(3);
     assert.equal(game.moveLog[2].engine,true); assert.equal(game.enginePaused,false);
   } finally {
-    timing.replyDelay = original;
+    timing.thinkTime = original;
     await post('new', { mode:'free', engineSide:null });
   }
 });

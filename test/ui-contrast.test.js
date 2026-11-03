@@ -72,6 +72,25 @@ const arrowConsts = (() => {
   return new Function(`${palette}\n${arrows}; return { ENGINE_PALETTE, ARROWS };`)();
 })();
 
+test('returning to engine votes requests fresh state after stop; hidden tabs never restart a sweep', async () => {
+  const block = appJs.match(/const stopSweepRemote =[\s\S]*?(?=\n\/\/ The registry loads)/)?.[0];
+  assert.ok(block, 'sweep lifecycle block exists');
+  const calls = [], timers = [], page = { hidden: false };
+  const setup = `let arrowMode='engines',retry=null,sweepTimer=0,viewIndex=0;
+    const game={revision:1,computer:{phase:'idle'}},currentFen=()=>'position',pollAnalysis=()=>{};
+    const analysis={sweep:{fen:'position',ply:0,phase:'ready'}};`;
+  const controls = new Function('api', 'setTimeout', 'clearTimeout', 'document', `${setup}\n${block};return {stopSweepRemote,scheduleSweep};`)(
+    (route, body) => { calls.push(body); return Promise.resolve({}); },
+    callback => { timers.push(callback); return timers.length; }, () => {}, page);
+  await controls.stopSweepRemote();
+  controls.scheduleSweep();
+  timers.shift()?.();
+  assert.equal(calls.filter(body => body.fen === 'position').length, 1, 'a stopped server cannot be mistaken for the old ready result');
+  page.hidden = true;
+  controls.scheduleSweep();
+  assert.equal(timers.length, 0, 'a hidden poll cannot restart work that visibility paused');
+});
+
 test("every move-quality badge glyph keeps >=3:1 against its disc", () => {
   for (const [type, { color, svg }] of Object.entries(badges)) {
     const ink = glyphInk(svg);
@@ -140,7 +159,7 @@ test("the best-line ladder descends in opacity and width (darker = stronger), th
   assert.ok(ARROWS.threat.opacities[0] < opacities[0] && ARROWS.threat.widths[0] < widths[0],
     "threats never out-shadow the best line");
   assert.ok(ARROWS.engine.opacity >= 0.4 && ARROWS.engine.opacity <= 0.7, "engine arrows stay firmly translucent (chessground pale-brush band)");
-  assert.ok(ARROWS.engine.width >= 24, "engine arrows are fat, like the reference sites' engine arrows");
+  assert.ok(ARROWS.engine.width <= 14 && widths[0] <= 14, "shafts leave the majority of each square visible");
   // The ladder must be composited-visible on the lightest shipped square: rank 3 over the lightest theme
   // square still shifts it perceptibly (>1.15:1 against the square it covers).
   const lightestSquare = Object.values(themes).map((t) => t.light).sort((a, b) => luminance(channels(b)) - luminance(channels(a)))[0];
@@ -159,7 +178,7 @@ test("ENGINE_ARROWS spreads agreeing engines and never clips a fat arrowhead off
   const FILES = "abcdefgh";
   const proj = (sq) => [FILES.indexOf(sq[0]) * 100 + 50, (8 - +sq[1]) * 100 + 50];
   const palette = [{ hue: "#111111" }, { hue: "#222222" }, { hue: "#333333" }, { hue: "#444444" }, { hue: "#555555" }];
-  const style = { opacity: 0.55, width: 32 };
+  const style = arrowConsts.ARROWS.engine;
   const votes = (from, to) => [1, 2, 3, 4, 5].map((slot) => ({ engineId: `e${slot}`, name: `E${slot}`, from, to, uci: from + to }));
   const inBounds = (polygons) => {
     assert.ok(polygons.length > 0, "planner returned no arrows");
@@ -175,8 +194,7 @@ test("ENGINE_ARROWS spreads agreeing engines and never clips a fat arrowhead off
     const polygons = plan(votes(from, to), proj, palette, style);
     assert.equal(polygons.length, 5, `${from}${to}: one arrow per agreeing engine`);
     inBounds(polygons);
-    // Agreeing arrows separate sideways OR by length stagger: every pair must differ by >=2 units
-    // somewhere (perpendicular room collapses to ~0 on the a/h files with fat arrows).
+    // Even at the board edge, agreeing votes keep distinct lanes.
     for (let i = 0; i < polygons.length; i++) {
       for (let j = i + 1; j < polygons.length; j++) {
         const spread = Math.max(...polygons[i].points.flatMap((p, n) =>
@@ -195,6 +213,10 @@ test("ENGINE_ARROWS spreads agreeing engines and never clips a fat arrowhead off
   assert.equal(plan(split, proj, palette, style).length, 2);
   // Skipped and errored engines draw nothing.
   assert.equal(plan([{ engineId: "x", name: "X", skipped: "chess960" }, { engineId: "y", name: "Y", error: "boom" }], proj, palette, style).length, 0);
+  const stationaryCastle = votes('g1', 'h1').map(r => ({ ...r, displayTo: 'g1' }));
+  const castleArrows = plan(stationaryCastle, proj, palette, style);
+  assert.equal(castleArrows.length, 5, 'stationary-king Chess960 castling points toward the rook');
+  inBounds(castleArrows);
 });
 
 test("essential overlays clear 3:1 on both square colours in every theme (dot, check disc, ring)", () => {

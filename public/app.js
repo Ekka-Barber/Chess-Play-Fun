@@ -316,7 +316,7 @@ document.addEventListener('visibilitychange', () => {
     if (pauseSent) { pauseSent = false; pausePost({ hidden: false, tab: TAB_ID }); scheduleSweep(); }
   }
 });
-window.addEventListener('pagehide', () => pausePost({ hidden: false, tab: TAB_ID }));
+window.addEventListener('pagehide', () => pausePost({ hidden: false, tab: TAB_ID, bye: true }));
 board.addEventListener('click', (event) => {
   if (event.detail === 0) {
     const sq = event.target.closest('.square')?.dataset.square;
@@ -399,16 +399,20 @@ function setArrowMode(mode) {
   arrowMode = mode;
   $('#coach').setAttribute('aria-pressed', mode === 'off' ? 'false' : mode === 'best' ? 'true' : 'mixed');
 }
-const stopSweepRemote = () => api('sweep', { stop: true }).catch(() => {});
+const stopSweepRemote = () => {
+  clearTimeout(sweepTimer);
+  if (analysis) analysis.sweep = { phase: 'idle', results: [] };
+  return api('sweep', { stop: true }).then(pollAnalysis).catch(() => {});
+};
 function scheduleSweep() {
-  if (arrowMode !== 'engines' || !game || retry) return;
+  if (document.hidden || arrowMode !== 'engines' || !game || retry || game.computer?.phase === 'thinking') return;
   clearTimeout(sweepTimer);
   sweepTimer = setTimeout(() => {
-    if (!game || retry) return;
+    if (document.hidden || arrowMode !== 'engines' || !game || retry || game.computer?.phase === 'thinking') return;
     const fen = currentFen(), ply = viewIndex, current = analysis?.sweep;
     // Re-post only when nothing already covers the on-screen position; 'paused' re-posts so an un-hide resumes it.
     if (current && current.fen === fen && current.ply === ply && (current.phase === 'running' || current.phase === 'ready')) return;
-    api('sweep', { fen, atPly: ply, revision: game.revision }).then(() => { pollKick = true; }).catch(() => {});
+    api('sweep', { fen, atPly: ply, revision: game.revision }).then(pollAnalysis).catch(() => {});
   }, 180);
 }
 
@@ -586,8 +590,7 @@ function renderPanels(force = false) {
   // The five-engine sweep covering the on-screen position (same fen+ply gate as live analysis).
   const sweepData = analysis?.sweep;
   const sweepLive = sweepData && sweepData.fen === fen && sweepData.ply === viewIndex && sweepData.phase !== 'idle' ? sweepData : null;
-  // Tab-hidden pause: the server freezes live analysis (governor.paused, mirrored by the frozen phase) until every
-  // hidden tab is back, any user action runs, or a fresh page load says hello.
+  // Shared analysis pauses only while every tracked tab is hidden.
   const paused = Boolean(game.governor?.paused) || live?.phase === 'paused';
   // A retry hides every answer: eval, arrows, best lines and threats.
   const cp = retry ? null : live?.terminalCp ?? live?.lines[0]?.whiteCp ?? game.evalHist[viewIndex] ?? null;
@@ -610,7 +613,7 @@ function renderPanels(force = false) {
     const el = $(`#${id}`), isEngine = color === bot;
     el.querySelector('img').src = `pieces/${color}K.svg`;
     text(el.querySelector('strong'), bot ? (isEngine ? engineName : 'You') : colorName(color));
-    text(el.querySelector('div span'), !isEngine ? `${colorName(color)} pieces` : s.mode === 'engine' ? strengthLabel(s.strength) : (game.survival ? 'Survival mode · full strength' : s.variety ? 'Random top-5 move · 1–10 s' : 'Best move · 1–10 s'));
+    text(el.querySelector('div span'), !isEngine ? `${colorName(color)} pieces` : s.mode === 'engine' ? strengthLabel(s.strength) : (game.survival ? 'Survival mode · full strength' : s.variety ? 'Random top-5 move' : 'Best move · full strength'));
     writeClock(el, color);
     // A flag replaces the turn chip: the flagged side reads "Flagged", the other side reads nothing.
     text(el.querySelector('.player-turn'), atTail && clock?.flagged ? (color === clock.flagged ? 'Flagged' : '')
@@ -618,8 +621,8 @@ function renderPanels(force = false) {
   }
   $('#botPlay').classList.toggle('hidden', !botWaiting());
   text($('#modeButton'), modeText(s));
-  text($('#modeDescription'), s.mode === 'engine' ? `You play ${colorName(s.humanColor)} against Stockfish (${strengthLabel(s.strength)}).`
-    : bot ? `You play ${colorName(bot === 'w' ? 'b' : 'w')}. Stockfish answers ${s.variety ? 'with one of its top 5 moves, picked at random,' : 'with its best move'} after 1–10 s.` : 'Your board. Both sides. Every possibility.');
+  text($('#modeDescription'), s.mode === 'engine' ? `You play ${colorName(s.humanColor)} against ${engineName} (${strengthLabel(s.strength)}).`
+    : bot ? `You play ${colorName(bot === 'w' ? 'b' : 'w')}. ${engineName} plays ${s.variety ? 'one of its top 5 moves, picked at random' : 'its best move'} as soon as its search finishes.` : 'Your board. Both sides. Every possibility.');
   text($('#footerMode'), `${modeText(s)}. ${s.variant === 'chess960' ? 'To castle, move the king onto its rook.' : 'Standard chess rules.'}`);
   renderControls();
   if (game.analysisMs) $('#speed').value = String(game.analysisMs);
@@ -923,13 +926,8 @@ function renderTablebase(fen) {
   body.replaceChildren(...tablebaseNodes(slot.data, fen));
 }
 
-// Arrow styling follows the reference boards, read from what they actually ship: chessground's brush
-// table (lichess) and chess.com's game-review arrows — SATURATED mid-tone colours drawn TRANSLUCENT with
-// fat shafts, so the live board stays visible under the annotation and the overlay reads as a layer, not
-// ink. Arrows are decorative annotations (the panel rows and the engine band carry the same facts as
-// text), so they deliberately trade a 3:1 contrast floor for this look. Colours are global, not themed:
-// an engine's colour is its identity on every board, exactly like the reference sites. Widths are
-// half-widths in the 0..800 viewBox (32 units ≈ 8% of the board — chessground's fat engine arrows).
+// Narrow, translucent annotations keep the pieces readable; colour identifies the engine across themes.
+// Widths are half-widths in an 800-unit board. The panel repeats every suggestion as accessible text.
 const ENGINE_PALETTE = [
   { hue: '#1467c8' }, // slot 1 · Stockfish — blue
   { hue: '#e68f00' }, // slot 2 · Berserk — amber (chessground yellow)
@@ -938,20 +936,17 @@ const ENGINE_PALETTE = [
   { hue: '#15781b' }, // slot 5 · Viridithas — green (chessground green)
 ];
 const ARROWS = {
-  best: { color: '#15781b', opacities: [0.8, 0.45, 0.28], widths: [36, 28, 22] }, // darker(more opaque) = stronger
-  threat: { color: '#882020', opacities: [0.55, 0.35], widths: [24, 18] },
-  engine: { opacity: 0.55, width: 32 },
+  best: { color: '#15781b', opacities: [0.8, 0.45, 0.28], widths: [12, 9, 7] },
+  threat: { color: '#882020', opacities: [0.55, 0.35], widths: [7, 5] },
+  engine: { opacity: 0.68, width: 12 },
 };
-// Pure arrow geometry shared by the best-line arrows and the five-engine view: the seven-point polygon for a
-// move at a given half-width, in board units (0..800). The head scales with the shaft (chessground derives
-// both from lineWidth) so fat arrows get fat heads. proj maps a square to its centre, so tests run this
-// without a DOM.
+// Head length stays distinct from shaft width, including short one-square moves.
 function arrowPoints(from, to, width, proj) {
   const [x, y] = proj(from), [tx, ty] = proj(to);
   const dx = tx - x, dy = ty - y, length = Math.hypot(dx, dy);
   if (!length) return null;
   const ux = dx / length, uy = dy / length, px = -uy, py = ux;
-  const head = width * 1.55, start = width * 0.8, tip = width * 1.1;
+  const head = width * 2, start = Math.min(28, length * 0.25), tip = Math.min(length * 0.45, Math.max(24, width * 3.4));
   const sx = x + ux * start, sy = y + uy * start, ex = x + dx - ux * tip, ey = y + dy - uy * tip;
   return [[sx + px * width, sy + py * width], [ex + px * width, ey + py * width], [ex + px * head, ey + py * head], [x + dx, y + dy], [ex - px * head, ey - py * head], [ex - px * width, ey - py * width], [sx - px * width, sy - py * width]];
 }
@@ -961,14 +956,15 @@ const PROJECT = (sq) => [col(sq) * 100 + 50, row(sq) * 100 + 50];
 // board centre, where the room is), and clamps the spacing so no translated point can leave the 0..800 viewBox.
 // The palette and style are passed in, keeping the block self-contained for extraction.
 const ENGINE_ARROWS = (() => {
-  const CENTRE = 400, STEP = 26;
+  const CENTRE = 400;
   const plan = (results, proj, palette, style) => {
     const groups = new Map();
     results.forEach((r, slot) => {
       if (!r.uci || r.skipped || r.error) return;
-      const key = `${r.from}>${r.displayTo || r.to}`;
+      const to = r.displayTo && r.displayTo !== r.from ? r.displayTo : r.to;
+      const key = `${r.from}>${to}`;
       const list = groups.get(key) || [];
-      list.push({ slot, engineId: r.engineId, from: r.from, to: r.displayTo || r.to });
+      list.push({ slot, engineId: r.engineId, from: r.from, to });
       groups.set(key, list);
     });
     const out = [];
@@ -980,10 +976,11 @@ const ENGINE_ARROWS = (() => {
       // Bias the offset direction toward the board centre (the roomy side).
       if ((CENTRE - (x0 + x1) / 2) * px + (CENTRE - (y0 + y1) / 2) * py < 0) { px = -px; py = -py; }
       const half = (list.length - 1) / 2;
+      const width = Math.min(style.width, 18 / list.length), STEP = width * 4 + 4;
       let step = 0;
       if (half) {
-        // Room for the widest arrow's bbox (head included) to travel along +/-perp before leaving the viewBox.
-        const box = arrowPoints(from, to, style.width, proj);
+        // Clamp the full arrowhead, not just the shaft, inside the board.
+        const box = arrowPoints(from, to, width, proj);
         const xs = box.map((p) => p[0]), ys = box.map((p) => p[1]);
         const room = (dx, dy) => {
           let best = Infinity;
@@ -994,23 +991,10 @@ const ENGINE_ARROWS = (() => {
         step = Math.max(0, Math.min(STEP, room(px, py) / half, room(-px, -py) / half));
       }
       list.forEach((member, k) => {
-        const points = arrowPoints(member.from, member.to, style.width, proj);
+        const points = arrowPoints(member.from, member.to, width, proj);
         if (!points) return;
-        // Two separations keep agreeing fat arrows readable where perpendicular room runs out (the a/h
-        // files): a clamped sideways offset, and a stagger ALONG the arrow so each engine's arrow is also
-        // visibly longer or shorter than its neighbours. The combined translation is then scaled back per
-        // member until every corner stays inside the viewBox — on long diagonals the two shifts stack.
-        const off = (k - half) * step, drag = (k - half) * 7;
-        const len2 = Math.hypot(x1 - x0, y1 - y0) || 1, ax = (x1 - x0) / len2, ay = (y1 - y0) / len2;
-        const shiftX = px * off + ax * drag, shiftY = py * off + ay * drag;
-        const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
-        let scale = 1;
-        if (shiftX > 1e-9) scale = Math.min(scale, (800 - Math.max(...xs)) / shiftX);
-        else if (shiftX < -1e-9) scale = Math.min(scale, Math.min(...xs) / -shiftX);
-        if (shiftY > 1e-9) scale = Math.min(scale, (800 - Math.max(...ys)) / shiftY);
-        else if (shiftY < -1e-9) scale = Math.min(scale, Math.min(...ys) / -shiftY);
-        scale = Math.max(0, scale);
-        out.push({ id: `engine-${member.engineId}`, fill: palette[member.slot % palette.length].hue, opacity: style.opacity, points: points.map(([X, Y]) => [X + shiftX * scale, Y + shiftY * scale]) });
+        const off = (k - half) * step;
+        out.push({ id: `engine-${member.engineId}`, fill: palette[member.slot % palette.length].hue, opacity: style.opacity, points: points.map(([X, Y]) => [X + px * off, Y + py * off]) });
       });
     }
     return out;
@@ -1022,6 +1006,7 @@ function arrow(from, to, color, opacity, id, width = 12) {
   if (!points) return '';
   return `<polygon id="${id}" points="${points.map((p) => p.join(',')).join(' ')}" fill="${color}" opacity="${opacity}"/>`;
 }
+let renderedArrows = '';
 function drawArrows(live, sweepLive) {
   let content = '';
   if (arrowMode === 'engines' && sweepLive) {
@@ -1031,14 +1016,11 @@ function drawArrows(live, sweepLive) {
       .map(({ id, fill, opacity, points }) => `<polygon id="${id}" points="${points.map((p) => p.join(',')).join(' ')}" fill="${fill}" opacity="${opacity}"/>`)
       .join('');
   } else if (arrowMode === 'best' && live) {
-    // The best-line ladder: one vivid green at THREE translucencies — rank 1 nearly solid, rank 3 a breath —
-    // plus width 36/28/22, so darker-and-thicker reads as stronger at a glance (the encoding this app has
-    // carried since its first version, now in the reference boards' palette). Threats are the same idea in
-    // chessground red, thinner so the two families never compete.
-    live.lines.slice(0, 3).forEach((line, i) => { content += arrow(line.from, line.displayTo || line.to, ARROWS.best.color, ARROWS.best.opacities[i], `suggestion-${i}`, ARROWS.best.widths[i]); });
-    live.threats.slice(0, 2).forEach((line, i) => { content += arrow(line.from, line.displayTo || line.to, ARROWS.threat.color, ARROWS.threat.opacities[i], `threat-${i}`, ARROWS.threat.widths[i]); });
+    live.threats.slice(0, 2).forEach((line, i) => { content += arrow(line.from, line.displayTo === line.from ? line.to : line.displayTo || line.to, ARROWS.threat.color, ARROWS.threat.opacities[i], `threat-${i}`, ARROWS.threat.widths[i]); });
+    // Paint rank 1 last so weaker alternatives cannot cover it.
+    content += live.lines.slice(0, 3).map((line, i) => arrow(line.from, line.displayTo === line.from ? line.to : line.displayTo || line.to, ARROWS.best.color, ARROWS.best.opacities[i], `suggestion-${i}`, ARROWS.best.widths[i])).reverse().join('');
   }
-  if ($('#arrows').innerHTML !== content) $('#arrows').innerHTML = content;
+  if (renderedArrows !== content) { $('#arrows').innerHTML = content; renderedArrows = content; }
 }
 function hotArrow(id, on) { document.getElementById(id)?.classList.toggle('hot', on); }
 
@@ -1513,19 +1495,19 @@ function notify(message, error = false) {
 
 // Idle-aware polling. While anything is active — analysis thinking, the computer thinking, a deep review
 // running, a quick game review still filling positions, or a revision bump just observed — the loop keeps
-// its historical 700 ms; once the analysis is ready and nothing else runs it backs off to 5 s. Any user
+// a 200 ms cadence; once the analysis is ready and nothing else runs it backs off to 5 s. Any user
 // action calls pollAnalysis(), which kicks the fast cadence at once, even mid-flight (the flag is read by
 // the next re-arm). A hidden tab keeps its old 2.5 s back-off untouched, ahead of every other rule.
-const POLL_ACTIVE = 700, POLL_IDLE = 5000, POLL_HIDDEN = 2500;
+const POLL_ACTIVE = 200, POLL_IDLE = 5000, POLL_HIDDEN = 2500;
 let pollKick = true; // start fast: the first poll is the connection attempt
 const pollBusy = () => !game || !analysis || analysis.phase !== 'ready' || game.computer?.phase === 'thinking'
-  || game.deep.active || (game.reviewAll && !reviewStatus().complete) || analysis.sweep?.phase === 'running';
+  || game.annotations.some(a => a?.type === 'pending') || game.deep.active || (game.reviewAll && !reviewStatus().complete) || analysis.sweep?.phase === 'running';
 async function pollTick() {
   if (busy || promoting || gesture) { pollTimer = setTimeout(pollTick, 500); return; }
   polling = true;
   const revision = game?.revision;
   try {
-    const data = await api('analysis');
+    const data = await api(`analysis?tab=${encodeURIComponent(TAB_ID)}&visible=${!document.hidden}`);
     if (busy || gesture || promoting || game?.revision !== revision) return;
     online = true;
     const first = !game, wasTail = first || viewIndex === game.moveLog.length;
@@ -1536,8 +1518,8 @@ async function pollTick() {
     if (changed) {
       viewIndex = wasTail ? game.moveLog.length : Math.min(viewIndex, game.moveLog.length);
       selected = null; retry = null;
-      scheduleSweep(); // an engine reply or undo moved the position: the coach view re-sweeps it
     }
+    scheduleSweep(); // also recover a stopped/paused sweep after visibility changes
     // While a retry attempt is on show, the board holds the scratch position.
     const shown = retry?.fen || currentFen();
     if (boardFen !== shown) syncBoard(shown, fresh);
@@ -1688,7 +1670,7 @@ $('#restoreConfirm').onclick = async () => {
 };
 $('#theme').onchange = () => { applyTheme($('#theme').value); api('settings', { theme: themeKey }).catch(() => {}); };
 // Power mode is a session-level setting: one POST, and the next poll syncs the select back from the server.
-$('#power').onchange = () => api('settings', { powerMode: $('#power').value }).catch((error) => notify(error.message, true));
+$('#power').onchange = () => api('settings', { powerMode: $('#power').value }).then(pollAnalysis).catch((error) => notify(error.message, true));
 // So is the engine pick: the server re-aims its processes (with Stockfish filling any capability gap) and the
 // next poll brings back the name and any notice.
 $('#engine').onchange = () => {
@@ -1703,7 +1685,7 @@ $('#engine').onchange = () => {
   }
   // Picking a single engine leaves the coach view; Best mode and everything else follow the choice.
   if (arrowMode === 'engines') { stopSweepRemote(); setArrowMode('best'); renderPanels(true); }
-  api('settings', { engineId: $('#engine').value }).catch((error) => notify(error.message, true));
+  api('settings', { engineId: $('#engine').value }).then(pollAnalysis).catch((error) => notify(error.message, true));
 };
 // And so is Online, the local-first opt-in: one POST, the next poll syncs the switch back. Enabling fetches
 // the position on screen once, immediately; disabling forgets every cached answer so nothing online lingers.

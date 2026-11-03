@@ -81,6 +81,28 @@ test("the sweep answers once per engine, multipv 1, only for positions of this g
   assert.equal(coachCalls.length, before, "the cached sweep answered without asking again");
 });
 
+test('cold coach handshakes overlap before searches enter the shared slot', async () => {
+  await Promise.all(coachEngines.map(coach => coach.chain));
+  const originals = coachEngines.map(coach => coach.start);
+  let release, started = 0;
+  const ready = new Promise(resolve => { release = resolve; });
+  coachEngines.forEach(coach => { coach.start = async () => { started++; await ready; }; });
+  try {
+    const game = await post('new');
+    coachCalls.length = 0;
+    await post('sweep', { fen: game.fens[0], atPly: 0, revision: game.revision });
+    await delay(20);
+    assert.equal(started, coachEngines.length, 'each cold handshake starts without waiting for the prior search');
+    assert.equal(coachCalls.length, 0, 'no search starts before its handshake finishes');
+    release();
+    assert.equal((await waitForSweep('ready')).phase, 'ready');
+  } finally {
+    release();
+    await Promise.all(coachEngines.map(coach => coach.chain));
+    coachEngines.forEach((coach, i) => { coach.start = originals[i]; });
+  }
+});
+
 test("a terminal position sweeps without asking any engine", async () => {
   coachCalls.length = 0;
   await post("new");
@@ -121,16 +143,19 @@ test("stop cancels a running sweep; a hidden-tab pause parks it as paused and a 
   } finally { coachEngines[0].go = quick; }
 });
 
-test("hello reports only its own tab and never wipes another hidden tab's pause", async () => {
+test("visible tabs keep analysis running while each hidden tab retains its own lease", async () => {
   await post("new");
   await post("pause", { hidden: true, tab: "tab-a" });
   await post("pause", { hidden: false, tab: "tab-b", hello: true });
-  assert.equal((await state()).governor.paused, true, "tab-a keeps its pause across another tab's hello");
+  assert.equal((await state()).governor.paused, false, "visible tab-b needs analysis");
   await post("pause", { hidden: false, tab: "tab-a" });
   assert.equal((await state()).governor.paused, false);
   // A tab loaded in the background says hello hidden: it registers its own pause instead of assuming visibility.
   await post("pause", { hidden: true, tab: "tab-c", hello: true });
-  assert.equal((await state()).governor.paused, true);
+  assert.equal((await state()).governor.paused, false, 'a background hello cannot pause visible tabs');
+  await post('pause', { hidden: false, tab: 'tab-a', bye: true });
+  await post('pause', { hidden: false, tab: 'tab-b', bye: true });
+  assert.equal((await state()).governor.paused, true, 'only hidden tab-c remains');
   await post("pause", { hidden: false, tab: "tab-c" });
   assert.equal((await state()).governor.paused, false);
 });
