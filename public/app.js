@@ -596,9 +596,11 @@ function renderPanels(force = false) {
   const cp = retry ? null : live?.terminalCp ?? live?.lines[0]?.whiteCp ?? game.evalHist[viewIndex] ?? null;
   const score = retry ? '—' : live?.lines[0]?.text || scoreLabel(cp);
   $('#evalFill').style.height = `${cp === null ? 50 : 100 / (1 + Math.exp(-.00368208 * cp))}%`;
-  $('#evalWrap').setAttribute('aria-label', `White evaluation: ${score}`);
+  const evalLabel = retry ? 'Hidden during retry' : score === '—' ? 'Not evaluated' : `White ${score}`;
+  $('#evalWrap').setAttribute('aria-label', `Evaluation: ${evalLabel}`);
+  $('#evalWrap').dataset.empty = String(cp === null);
   $('#evalWrap').classList.toggle('flipped', flipped);
-  text($('#evalNum'), score);
+  text($('#evalNum'), evalLabel);
   const check = game.inCheck ? ' · Check' : '';
   text($('#status'), !online ? 'Connection lost. Reconnecting…'
     : retry ? `Retry: find a better move for ${colorName(turn)}.`
@@ -936,9 +938,9 @@ const ENGINE_PALETTE = [
   { hue: '#15781b' }, // slot 5 · Viridithas — green (chessground green)
 ];
 const ARROWS = {
-  best: { color: '#15781b', opacities: [0.8, 0.45, 0.28], widths: [12, 9, 7] },
-  threat: { color: '#882020', opacities: [0.55, 0.35], widths: [7, 5] },
-  engine: { opacity: 0.68, width: 12 },
+  best: { color: '#15781b', opacities: [0.6, 0.36, 0.22], widths: [12, 9, 7] },
+  threat: { color: '#882020', opacities: [0.4, 0.26], widths: [7, 5] },
+  engine: { opacity: 0.38, width: 12 },
 };
 // Head length stays distinct from shaft width, including short one-square moves.
 function arrowPoints(from, to, width, proj) {

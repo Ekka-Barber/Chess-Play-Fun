@@ -11,7 +11,17 @@ A local chess workbench for Windows. Play Standard or Chess960, watch candidate 
 
 ![CHESS running locally: five engines suggest moves on the same board, with matching colours, evaluations, and a detailed analysis panel.](assets/screens/app-engine-votes.png)
 
-[Install](#run-locally) · [Use the board](#use-the-board) · [Engine guide](#choose-your-engine) · [Performance](#measured-performance) · [Limits](#know-the-limits)
+[Install](#run-locally) · [Use the board](#use-the-board) · [Engine guide](#choose-your-engine) · [Performance](#measured-performance) · [Changelog](CHANGELOG.md) · [Releases](https://github.com/Ekka-Barber/Chess-Play-Fun/releases)
+
+## Latest: v4.0.2
+
+- Smaller hollow legal-move markers replace the heavy filled dots. Capture rings leave the pieces visible.
+- A softer evaluation rail includes an equality midpoint, a quicker transition, and a labelled score above the board. Unknown evaluations and retry drills no longer display a misleading even position.
+- Five-engine arrows use lower opacity, including their hover state, so the board stays readable when engines agree.
+- Candidate moves stream before grading finishes. Free-play engine replies no longer wait through an artificial pause.
+- Lichess cloud requests use the documented `multiPv` parameter. Online lookups remain optional and cached.
+
+Verified with **116 passing tests**, desktop and phone browser checks, board flipping, and evaluation states for equal positions, advantages, mate, unknown scores, and retries. [See the updated board](assets/screens/app-board-controls.png) or [read the release notes](CHANGELOG.md).
 
 ## Run locally
 

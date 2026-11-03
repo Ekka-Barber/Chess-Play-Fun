@@ -22,9 +22,9 @@
     <div class="workspace-heading"><h1>Play & learn.</h1><p id="modeDescription">Your board. Both sides. Every possibility.</p></div>
     <div class="workspace">
       <section class="stage" aria-label="Chessboard workspace">
-        <div class="player-row" id="topPlayer"><img src="pieces/bK.svg" alt="" width="32" height="32"><div><strong>Black</strong><span>Black pieces</span></div><span class="player-clock" role="timer" hidden></span><span class="player-turn"></span></div>
+        <div class="player-row" id="topPlayer"><img src="pieces/bK.svg" alt="" width="32" height="32"><div><strong>Black</strong><span>Black pieces</span></div><span class="player-clock" role="timer" hidden></span><span id="evalNum" title="White's perspective, in pawns. Positive favors White; negative favors Black. M indicates mate.">Not evaluated</span><span class="player-turn"></span></div>
           <div class="board-area">
-          <div class="evalwrap" role="img" aria-label="Position evaluation" id="evalWrap"><div class="evalbar"><div class="evalfill" id="evalFill"></div></div></div>
+          <div class="evalwrap" role="img" aria-label="Evaluation: Not evaluated" data-empty="true" id="evalWrap"><div class="evalbar"><div class="evalfill" id="evalFill"></div></div></div>
           <div class="board" id="board" role="grid" aria-label="Chessboard" aria-describedby="boardHelp" tabindex="0">
             <div class="squares" id="squares" role="rowgroup"></div>
             <div class="pieces" id="pieces" aria-hidden="true"></div>
@@ -48,7 +48,7 @@
             <button id="navLast" aria-label="Latest position" title="Latest position (End)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M6 5l7 7-7 7"/></svg></button>
           </div>
         </div>
-        <div class="board-caption"><p id="status" role="status">Connecting to your board…</p><button id="botPlay" class="moment-primary hidden">Let Stockfish play</button><span id="evalNum">—</span></div>
+        <div class="board-caption"><p id="status" role="status">Connecting to your board…</p><button id="botPlay" class="moment-primary hidden">Let Stockfish play</button></div>
         <p id="boardHelp" class="board-help">Select a piece to see legal moves. Drag, or select a destination.</p>
       </section>
       <aside class="panel" aria-label="Position analysis">

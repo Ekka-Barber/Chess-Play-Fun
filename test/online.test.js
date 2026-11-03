@@ -95,7 +95,7 @@ test('an allowed cloud-eval answers with White-POV eval and depth, and the cache
   await post('new');
   const first = await post('online/cloud-eval', { fen: start });
   assert.deepEqual(first, { fen: start, depth: 70, knodes: 105848192, pvs: [{ whiteCp: 19, mate: null, moves: ['e2e4', 'e7e5', 'g1f3'] }], source: 'live' });
-  assert.deepEqual(fetchLog, [`https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(start)}&multipv=1`]);
+  assert.deepEqual(fetchLog, [`https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(start)}&multiPv=1`]);
   const second = await post('online/cloud-eval', { fen: start });
   assert.equal(second.source, 'cache');
   assert.equal(fetchLog.length, 1, 'the cached answer was served without touching the network');

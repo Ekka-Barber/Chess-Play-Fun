@@ -154,11 +154,11 @@ test("the best-line ladder descends in opacity and width (darker = stronger), th
     assert.ok(opacities[i] < opacities[i - 1], "rank opacities must strictly descend");
     assert.ok(widths[i] < widths[i - 1], "rank widths must strictly descend");
   }
-  assert.ok(opacities[0] >= 0.7 && opacities[0] < 1, "rank 1 is near-solid but keeps the board readable under it");
+  assert.ok(opacities[0] >= 0.5 && opacities[0] <= 0.65, "rank 1 stays distinct without obscuring the board");
   assert.ok(opacities[2] <= 0.35, "rank 3 is a breath — the light end of the ladder");
   assert.ok(ARROWS.threat.opacities[0] < opacities[0] && ARROWS.threat.widths[0] < widths[0],
     "threats never out-shadow the best line");
-  assert.ok(ARROWS.engine.opacity >= 0.4 && ARROWS.engine.opacity <= 0.7, "engine arrows stay firmly translucent (chessground pale-brush band)");
+  assert.ok(ARROWS.engine.opacity >= 0.3 && ARROWS.engine.opacity <= 0.45, "five-engine arrows stay soft when displayed together");
   assert.ok(ARROWS.engine.width <= 14 && widths[0] <= 14, "shafts leave the majority of each square visible");
   // The ladder must be composited-visible on the lightest shipped square: rank 3 over the lightest theme
   // square still shifts it perceptibly (>1.15:1 against the square it covers).
@@ -219,7 +219,7 @@ test("ENGINE_ARROWS spreads agreeing engines and never clips a fat arrowhead off
   inBounds(castleArrows);
 });
 
-test("essential overlays clear 3:1 on both square colours in every theme (dot, check disc, ring)", () => {
+test("essential overlays clear 3:1 on both square colours in every theme (destination, check disc, last move)", () => {
   for (const [key, theme] of Object.entries(themes)) {
     for (const overlay of ["arrowThreat", "target"]) {
       assert.ok(/^#[0-9a-f]{6}$/i.test(theme[overlay] ?? ""), `theme ${key} is missing a ${overlay} colour`);
@@ -240,11 +240,12 @@ test("overlays stay wired: arrows to the shared constants, essentials to theme t
   assert.ok(!/#[0-9a-f]{6}/i.test(body), "drawArrows must not hard-code arrow colours");
   const calls = [...body.matchAll(/arrow\(([^)]*)\)/g)];
   assert.ok(calls.length >= 2, "expected the suggestion and threat arrow call sites in drawArrows");
-  // The legal-move dot, check disc and last-move ring are interactive/essential: theme tokens at >=3:1.
-  assert.equal(cssProp(cssRule(".square.target::after"), "background"), "var(--target)",
-    "legal-move dot must use var(--target)");
-  assert.ok(cssProp(cssRule(".square.target.capture::after"), "background").includes("var(--target)"),
-    "capture ring must use var(--target)");
+  // Destination and capture rings share the same contrasting stroke without obscuring the board.
+  const target = cssRule(".square.target::after");
+  assert.ok(cssProp(target, "border").includes("var(--target)"), "legal destinations must use the theme's contrasting stroke");
+  assert.equal(cssProp(target, "background"), "transparent", "legal destinations must stay hollow");
+  const capture = cssRule(".square.target.capture::after");
+  assert.ok(!cssProp(capture, "background") && !cssProp(capture, "border"), "captures must inherit the hollow destination stroke");
   const check = cssRule(".square.check::after");
   assert.equal(cssProp(check, "background"), "var(--arrow-threat)", "the check disc must use the threat token");
   assert.ok(!/opacity\s*:/.test(check) || parseFloat(check.match(/opacity\s*:\s*([\d.]+)/)[1]) >= 1,
@@ -261,7 +262,8 @@ test("overlays stay wired: arrows to the shared constants, essentials to theme t
   assert.ok(appJs.includes("function setArrowMode"), "setArrowMode drives the button's aria state");
   assert.ok(appJs.includes("renderEngineBand"), "the engine colour band renders with the coach view");
   assert.ok(appJs.includes("'__votes__'"), "the top-bar Engine picker exposes the all-engines coach view");
-  // A translucent hot state is fine in the vivid system; it must not stack extra opacity on an arrow.
+  // Hover isolates one move while retaining transparency over the pieces.
   const hot = cssRule(".arrows polygon.hot");
-  assert.ok(!/opacity\s*:\s*0?\.[0-9]/.test(hot), "the hot state must not dim arrows");
+  const hotOpacity = Number(cssProp(hot, "opacity"));
+  assert.ok(hotOpacity > arrowConsts.ARROWS.engine.opacity && hotOpacity <= 0.75, "hover emphasizes an arrow without making it opaque");
 });
