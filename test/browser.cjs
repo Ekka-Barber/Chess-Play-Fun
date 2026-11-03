@@ -1,14 +1,17 @@
-// Run with a local Chromium debugging port: node test/browser.cjs 58776
+// Use a disposable server: node test/browser.cjs 58776 http://127.0.0.1:4660/
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const ARTIFACTS = path.join(__dirname, '..', '.zcode', 'glm-audit-browser');
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function run() {
   const port = process.argv[2];
   assert(port, 'Pass the debugging port from agent-browser get cdp-url.');
+  assert(process.argv[3], 'Pass a disposable app URL; browser verification replaces its game.');
+  const appOrigin = new URL(process.argv[3]).origin;
   const tabs = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json());
-  const target = tabs.find((tab) => tab.type === 'page' && /127\.0\.0\.1:4655/.test(tab.url));
+  const target = tabs.find((tab) => tab.type === 'page' && new URL(tab.url).origin === appOrigin);
   assert(target, 'Open the chess app before running browser verification.');
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve) => socket.addEventListener('open', resolve, {once:true}));
@@ -31,10 +34,14 @@ async function run() {
   };
   const wait = async (expression,ms=15000) => {
     const end=Date.now()+ms;
-    while(Date.now()<end) { if(await evaluate(expression)) return; await delay(70); }
+    while(Date.now()<end) {
+      try { if(await evaluate(expression)) return; }
+      catch(error) { if(!/Execution context|Cannot find context/.test(error.message)) throw error; }
+      await delay(70);
+    }
     throw new Error(`Condition failed: ${expression}`);
   };
-  const point = (selector) => evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+  const point = (selector) => evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();if(!r.width||!r.height)throw new Error('Control is hidden');return{x:r.x+r.width/2,y:r.y+r.height/2};})()`);
   let held = false;
   const mouse = async (type,p) => {
     if(type==='mousePressed') held=true;
@@ -42,7 +49,7 @@ async function run() {
     await send('Input.dispatchMouseEvent',{type,...p,button:type==='mouseMoved'&&!held?'none':'left',buttons:held?1:0,clickCount:type==='mouseMoved'?0:1});
     await delay(25);
   };
-  const click = async (selector) => { const p=await point(selector);await mouse('mouseMoved',p);await mouse('mousePressed',p);await mouse('mouseReleased',p);await delay(70); };
+  const click = async (selector) => { await evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center',inline:'nearest'})`);const p=await point(selector);await mouse('mouseMoved',p);await mouse('mousePressed',p);await mouse('mouseReleased',p);await delay(70); };
   const sq = (square) => `.square[data-square="${square}"]`;
   const drag = async (from,to,outside=false) => {
     const a=await point(sq(from)),b=outside?{x:5,y:5}:await point(sq(to));
@@ -61,12 +68,12 @@ async function run() {
     await evaluate(`document.fonts.ready`);
     const metrics=await send('Page.getLayoutMetrics');
     const image=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:full,...(full?{clip:{x:0,y:0,width:metrics.cssContentSize.width,height:metrics.cssContentSize.height,scale:1}}:{})});
-    await fs.writeFile(path.join('.impeccable','review',name),Buffer.from(image.data,'base64'));
+    await fs.writeFile(path.join(ARTIFACTS,name),Buffer.from(image.data,'base64'));
   };
   const captureViewports = async () => {
     await wait(`analysis?.phase==='ready' && document.querySelector('.line .play')`,25000);
     await wait(`document.querySelector('#toast').classList.contains('hidden')`);
-    assert.equal(await evaluate(`document.querySelector('#speed').value`),String(await evaluate('game.analysisMs')),'analysis time remains truthful after reload');
+    assert.equal(await evaluate(`document.querySelector('#speed input:checked')?.value`),String(await evaluate('game.analysisMs')),'analysis time remains truthful after reload');
     for(const [width,height,name] of [[390,844,'mobile.png'],[1440,900,'desktop.png'],[1254,900,'user-1254.png'],[320,740,'mobile-320.png']]) {
       await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});await evaluate('window.scrollTo(0,0)');await delay(150);
       assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'),false,`no overflow at ${width}px`);
@@ -75,7 +82,102 @@ async function run() {
     }
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:900,deviceScaleFactor:1,mobile:false});
   };
-  await fs.mkdir('.impeccable/review',{recursive:true});
+  const reload = async () => {
+    await evaluate('window.__beforeAuditReload=true');
+    await send('Page.reload',{ignoreCache:true});
+    await wait(`!window.__beforeAuditReload && typeof game!=='undefined' && game && typeof puzzles!=='undefined'`);
+  };
+  const verifyPuzzles = async () => {
+    await evaluate(`sessionStorage.removeItem('chess.puzzle-session');history.replaceState(null,'','/')`);
+    await reload();
+    const before = await evaluate(`JSON.stringify([game.id,game.revision,game.fens,game.moveLog,game.settings.flipped])`);
+    await click('#openPuzzles');
+    await wait(`document.querySelectorAll('.puzzle-square').length===64 && document.querySelector('.puzzle-message').textContent.startsWith('Find')`);
+    const puzzleSquare = key => `[data-puzzle-square="${key}"]`;
+    const action = key => `[data-puzzle-action="${key}"]`;
+    await click(puzzleSquare('e1')); await click(puzzleSquare('e8'));
+    await wait(`document.querySelector('.puzzle-turn').textContent==='Puzzle complete'`);
+    await reload();
+    assert.equal(await evaluate(`location.hash`),'#puzzles');
+    assert.equal(await evaluate(`document.querySelector('#puzzleWorkspace').classList.contains('hidden')`),false);
+    assert.equal(await evaluate(`document.querySelector('.puzzle-turn').textContent`),'Puzzle complete');
+    assert.equal(await evaluate(`getComputedStyle(document.querySelector('.puzzle-square')).opacity`),'1','a completed board must not fade');
+    checks.push('puzzle view, solved position and feedback survive reload');
+    for(let i=0;i<3;i++) {
+      await click(action('next'));
+      await wait(`JSON.parse(sessionStorage.getItem('chess.puzzle-session')).index===${i+1} && !document.querySelector('${action('next')}').disabled`);
+    }
+    await click(puzzleSquare('g1')); await click(puzzleSquare('h2'));
+    await wait(`JSON.parse(sessionStorage.getItem('chess.puzzle-session')).state.moves.length===1`);
+    const fen = await evaluate(`JSON.parse(sessionStorage.getItem('chess.puzzle-session')).state.fen`);
+    await reload();
+    assert.equal(await evaluate(`JSON.parse(sessionStorage.getItem('chess.puzzle-session')).state.fen`),fen);
+    assert.equal(await evaluate(`document.querySelector('.puzzle-title').textContent`),'Find the forcing sequence');
+    await click(action('hint')); await wait(`document.querySelector('.puzzle-message').textContent.startsWith('Look at')`);
+    await reload();
+    assert((await evaluate(`document.querySelectorAll('.puzzle-square.sel').length`))>0,'the displayed hint survives reload');
+    await click(action('reveal')); await wait(`document.querySelector('.puzzle-turn').textContent==='Solution shown'`);
+    const solution = await evaluate(`document.querySelector('.puzzle-solution').textContent`);
+    await reload();
+    assert.equal(await evaluate(`document.querySelector('.puzzle-solution').textContent`),solution);
+    await click(action('retry'));
+    assert.equal(await evaluate(`JSON.parse(sessionStorage.getItem('chess.puzzle-session')).state.moves.length`),0);
+    assert.equal(await evaluate(`JSON.parse(sessionStorage.getItem('chess.puzzle-session')).assisted`),false);
+    checks.push('combination position, hint and revealed line survive reload; retry clears assistance');
+    for(const [width,height] of [[1440,900],[390,844],[320,740],[844,390]]) {
+      await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
+      assert.equal(await evaluate(`document.documentElement.scrollWidth>innerWidth`),false,`no puzzle overflow at ${width}px`);
+      assert(await evaluate(`[...document.querySelectorAll('.puzzle-square')].every(e=>{const r=e.getBoundingClientRect();return Math.abs(r.width-r.height)<1})`),`all 64 cells must stay square at ${width}px`);
+      assert(await evaluate(`[...document.querySelectorAll('.puzzle-square img')].every(i=>{const a=i.getBoundingClientRect(),b=i.parentElement.getBoundingClientRect();return a.width<=b.width && a.height<=b.height})`),'pieces must fit their squares');
+    }
+    checks.push('all 64 puzzle squares and pieces fit desktop, phone and landscape layouts');
+    await send('Emulation.setDeviceMetricsOverride',{width:1440,height:900,deviceScaleFactor:1,mobile:false});
+    await evaluate(`document.querySelector('#openPuzzles').focus()`); await key('f','KeyF');
+    assert.equal(await evaluate(`JSON.stringify([game.id,game.revision,game.fens,game.moveLog,game.settings.flipped])`),before,'puzzle shortcuts must not flip or modify the hidden game');
+    await click('#appearance'); await click('#pieceSet label:has(input[value="merida"])');
+    assert(await evaluate(`[...document.querySelectorAll('.puzzle-square img')].every(i=>i.src.includes('/pieces/merida/'))`));
+    await click('#pieceSet label:has(input[value="cburnett"])'); await click('#appearanceClose');
+    await click(action('close'));
+    assert.equal(await evaluate(`document.querySelector('.workspace').classList.contains('hidden')`),false);
+    await send('Page.navigateToHistoryEntry',{entryId:(await send('Page.getNavigationHistory')).entries.at(-2).id});
+    await wait(`location.hash==='#puzzles' && !document.querySelector('#puzzleWorkspace').classList.contains('hidden')`);
+    await evaluate(`sessionStorage.setItem('chess.puzzle-session','{broken')`); await reload();
+    await wait(`document.querySelector('.puzzle-title').textContent==='Close the back rank' && !document.querySelector('${action('next')}').disabled`);
+    await evaluate(`(()=>{const saved=JSON.parse(sessionStorage.getItem('chess.puzzle-session'));saved.state.rating={toString:'broken'};sessionStorage.setItem('chess.puzzle-session',JSON.stringify(saved));})()`);
+    await reload();
+    await wait(`document.querySelector('.puzzle-title').textContent==='Close the back rank' && !document.querySelector('${action('next')}').disabled`);
+    assert.equal(await evaluate(`JSON.stringify([game.id,game.revision,game.fens,game.moveLog,game.settings.flipped])`),before,'puzzles and reloads leave the shared game untouched');
+    await click(action('hint')); await wait(`document.querySelector('.puzzle-message').textContent.startsWith('Look at')`);
+    await click(puzzleSquare('e1')); await click(puzzleSquare('e8'));
+    await wait(`document.querySelector('.puzzle-turn').textContent==='Completed with help'`);
+    await reload();
+    assert.equal(await evaluate(`document.querySelector('.puzzle-turn').textContent`),'Completed with help');
+    await evaluate(`window.__storageSetItem=Storage.prototype.setItem;Storage.prototype.setItem=function(){throw new Error('storage blocked')}`);
+    await click(action('retry'));
+    assert.equal(await evaluate(`document.querySelector('.puzzle-storage').classList.contains('hidden')`),false,'failed saves must be visible');
+    await evaluate(`Storage.prototype.setItem=window.__storageSetItem;delete window.__storageSetItem`);
+    await click(action('retry'));
+    assert.equal(await evaluate(`document.querySelector('.puzzle-storage').classList.contains('hidden')`),true);
+    checks.push('browser Back, corrupted-storage recovery, live piece selection and honest assisted completion');
+    await click('#appearance');
+    await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
+    await click('#previewBrilliant');
+    assert(await evaluate(`document.querySelector('#brilliantPreview svg').getAnimations().length>0 && !!document.querySelector('#brilliantPreview .brilliant-burst')`));
+    await wait(`!document.querySelector('#brilliantPreview .brilliant-burst')`);
+    await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+    await click('#previewBrilliant');
+    assert.equal(await evaluate(`document.querySelector('#brilliantPreview svg').getAnimations().length`),0);
+    assert.equal(await evaluate(`document.querySelector('#brilliantPreviewStatus').textContent`),'Reduced motion is on.');
+    await send('Emulation.setEmulatedMedia',{features:[]}); await click('#appearanceClose');
+    checks.push('brilliant preview animates once, cleans up its decoration and respects reduced motion');
+    await click('#new'); await click('#newConfirm');
+    await wait(`!document.querySelector('#newDialog').open && document.querySelector('#puzzleWorkspace').classList.contains('hidden') && !busy`);
+    await click('#compareEngines'); assert.equal(await evaluate(`arrowMode`),'engines');
+    await click('#compareEngines'); assert.equal(await evaluate(`arrowMode`),'best');
+    assert.equal(await evaluate(`document.querySelector('#compareEngines').getAttribute('aria-pressed')`),'false');
+    checks.push('New game exits puzzle mode; comparison button both starts and stops engine votes');
+  };
+  await fs.mkdir(ARTIFACTS,{recursive:true});
   const checks=[];
   try {
     await send('Page.enable');
@@ -85,12 +187,14 @@ async function run() {
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:900,deviceScaleFactor:1,mobile:false});
     await delay(300);
     if(process.argv.includes('--capture-only')) { await captureViewports();console.log('Recaptured all four viewports.');return; }
+    if(process.argv.includes('--puzzles-only')) { await verifyPuzzles();console.log(JSON.stringify({passed:checks.length,checks},null,2));return; }
     await reset();
     assert(await evaluate(`document.querySelector('${sq('a1')}').classList.contains('dark') && document.querySelector('${sq('h1')}').classList.contains('light')`));
     await drag('e2','e4'); await wait(`game.moveLog.length===1 && !busy`);
     assert.equal(await evaluate(`game.moveLog[0].san`),'e4');
     await click(sq('g1'));await click(sq('f3'));assert.equal(await evaluate('game.moveLog.length'),1);
     await drag('e7','e5',true);assert.equal(await evaluate('game.moveLog.length'),1);assert.equal(await evaluate('gesture'),null);
+    await key('Escape');assert.equal(await evaluate('selected'),null);
     checks.push('mouse drag, held-piece feedback, outside-board cancellation, square orientation');
 
     await click(sq('e7'));await click(sq('e5'));await wait(`game.moveLog.length===2 && !busy`);
@@ -103,7 +207,9 @@ async function run() {
     await click('#navNext');assert.equal(await evaluate('viewIndex'),1);
     await click('#navLast');assert.equal(await evaluate('viewIndex'),3);
     await click('#navPrev');assert.equal(await evaluate('viewIndex'),2);
-    await click('.mv[data-ply="1"]');await drag('c7','c5');await wait('game.moveLog.length===2 && !busy');
+    await click('#tabMoves');await click('.mv[data-ply="1"]');await drag('c7','c5');
+    await wait(`document.querySelector('#discardDialog').open`);await click('#discardConfirm');
+    await wait('game.moveLog.length===2 && !busy');
     assert.equal(await evaluate('game.moveLog[1].san'),'c5');await click('#undo');await wait('game.moveLog.length===1 && !busy');
     checks.push('all history buttons, clickable notation, branching, undo');
 
@@ -122,8 +228,9 @@ async function run() {
 
     await reset();await click(sq('d1'));await click(sq('e8'));await wait('!busy');
     assert.equal(await evaluate('game.moveLog.length'),0);assert.equal(await evaluate(`pieces.get('d1').dataset.code`),'Q');
-    assert(await evaluate(`!document.querySelector('#toast').classList.contains('hidden')`));
-    checks.push('rejected king capture restores board and displays recovery message');
+    await evaluate(`submitMove('d1','e8')`);await wait('!busy');
+    assert.equal(await evaluate(`game.moveLog.length===0 && pieces.get('d1').dataset.code==='Q' && pieces.get('e8').dataset.code==='k' && pieces.get('e8').style.visibility!== 'hidden'`),true);
+    checks.push('illegal clicks and rejected king captures preserve the board and restore both pieces');
 
     await evaluate(`submitMove('e2','e4')`);await wait('game.moveLog.length===1 && !busy');
     await click('#new');await wait(`document.querySelector('#newDialog').open`);await click('#newCancel');assert.equal(await evaluate('game.moveLog.length'),1);
@@ -147,6 +254,7 @@ async function run() {
     await send('Emulation.setTouchEmulationEnabled',{enabled:false});
 
     await evaluate(`submitMove('e7','e5')`);await evaluate(`submitMove('g1','f3')`);await evaluate(`submitMove('b8','c6')`);await evaluate(`submitMove('f1','c4')`);
+    await click('#tabAnalysis');
     await wait(`analysis?.fen===currentFen() && analysis.phase==='ready'`,25000);
     assert((await evaluate('analysis.depth'))>0);assert.equal(await evaluate('analysis.lines.length'),3);
     // The Arrows button is a tri-state (Off -> Best -> Engines): off hides everything, best restores the
@@ -157,7 +265,7 @@ async function run() {
     await click('#coach');await wait(`analysis?.sweep?.phase==='ready'`,60000);
     assert.equal(await evaluate(`document.querySelectorAll('#arrows polygon').length`),await evaluate('engineRegistry.engines.length'),'one arrow per engine answered');
     await click('#coach');await click('#coach');
-    await evaluate(`document.querySelector('#speed').value='900';document.querySelector('#speed').onchange()`);
+    await evaluate(`const r=document.querySelector('#speed input[value="900"]');r.checked=true;r.dispatchEvent(new Event('change',{bubbles:true}))`);
     await wait(`fetch('/api/analysis').then(r=>r.json()).then(d=>d.phase==='ready')`,25000);
     await wait(`analysis.phase==='ready' && document.querySelector('.line .play')`,25000);
     checks.push('real Stockfish analysis, three variations, arrow toggle, analysis-time setting');
@@ -166,7 +274,7 @@ async function run() {
     await evaluate(`submitMove('g8','f6')`);
     assert.equal(await evaluate('game.moveLog.length'),5);
     assert.equal(await evaluate(`pieces.has('g8') && !pieces.has('f6')`),true);
-    assert.equal(await evaluate('online'),false);
+    await evaluate('pollAnalysis()');await wait('online===false',5000);
     await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
     await evaluate('pollAnalysis()');
     await wait(`online && analysis.phase==='ready' && document.querySelector('.line .play')`);
@@ -180,8 +288,13 @@ async function run() {
     await send('Emulation.setEmulatedMedia',{features:[]});checks.push('reduced-motion alternatives');
     await wait(`document.querySelector('.line .play') && analysis.phase==='ready'`,25000);
     await click('.line .play');await wait('game.moveLog.length===6 && !busy');checks.push('engine variation play control');
-    await fs.writeFile('.impeccable/review/browser-results.json',JSON.stringify({engine:'Chromium',touch:'CDP Input.dispatchTouchEvent; physical hardware untested',checks},null,2));
+    await verifyPuzzles();
+    await fs.writeFile(path.join(ARTIFACTS,'browser-results.json'),JSON.stringify({engine:'Chromium',touch:'CDP Input.dispatchTouchEvent; physical hardware untested',checks},null,2));
     console.log(JSON.stringify({passed:checks.length,checks},null,2));
-  } finally { await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:0,y:0,button:'left',buttons:0,clickCount:1}); socket.close(); }
+  } finally {
+    await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
+    await send('Emulation.setEmulatedMedia',{features:[]});
+    await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:0,y:0,button:'left',buttons:0,clickCount:1}); socket.close();
+  }
 }
 run().catch((error)=>{console.error(error);process.exitCode=1;});

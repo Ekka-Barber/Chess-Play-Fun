@@ -20,6 +20,17 @@ const themes = require("../public/themes.js");
 const appJs = fs.readFileSync(path.join(__dirname, "..", "public", "app.js"), "utf8");
 const styleCss = fs.readFileSync(path.join(__dirname, "..", "public", "style.css"), "utf8");
 const archiveJs = fs.readFileSync(path.join(__dirname, "..", "lib", "archive.js"), "utf8");
+const indexHtml = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf8");
+
+test('configuration exposes direct choices and contains no dropdown controls', () => {
+  assert.ok(!/<select\b/i.test(indexHtml), 'all configuration choices must be available without a dropdown');
+  for (const id of ['engine', 'power', 'speed', 'theme', 'pieceSet', 'gameMode', 'gameBot', 'gameVariant', 'gameSide', 'gameClock']) {
+    assert.ok(indexHtml.includes(`<fieldset id="${id}"`), `${id} needs a named native choice group`);
+  }
+  assert.match(indexHtml, /<input id="online" type="checkbox">/, 'online lookups remain a direct opt-in');
+  assert.ok(indexHtml.includes('id="compareEngines"'), 'comparison remains distinct from choosing an engine');
+  assert.ok(!appJs.includes('new Option('), 'the app must not recreate dropdown options at runtime');
+});
 
 // WCAG 2.x relative luminance and contrast; alpha composites blend in gamma-encoded sRGB space,
 // the model browsers use for simple alpha, so a translucent overlay is measured as rendered.
@@ -89,6 +100,31 @@ test('returning to engine votes requests fresh state after stop; hidden tabs nev
   page.hidden = true;
   controls.scheduleSweep();
   assert.equal(timers.length, 0, 'a hidden poll cannot restart work that visibility paused');
+});
+
+test('brilliant feedback runs once for a confirmed player move at the live tail, never on retries or engine moves', () => {
+  const block = appJs.match(/function renderBoardBadge\(\) \{[\s\S]*?\n\}/)?.[0];
+  const bot = appJs.match(/const botSide = [^\n]+/)?.[0];
+  assert.ok(block && bot);
+  const element = { dataset: {}, style: {}, setAttribute() {} }, calls = [];
+  const game = { id: 'game-a', settings: { mode: 'free', engineSide: null }, moveLog: [{ to: 'f7', san: 'Rxf7', color: 'w' }], annotations: [{ type: 'brilliant', label: 'Brilliant' }] };
+  const controls = new Function('$', 'BADGES', 'animateBrilliant', 'game', `
+    let viewIndex=1,retry=null,lastAnimatedBrilliant='';
+    const col=()=>5,row=()=>1;
+    ${bot}\n${block}
+    return {draw:renderBoardBadge,view:value=>viewIndex=value,retry:value=>retry=value};
+  `)(() => element, badges, el => calls.push(el), game);
+  controls.draw(); controls.draw(); assert.deepEqual(calls, [element], 'polling cannot replay the same celebration');
+  controls.view(0); controls.draw(); controls.view(1); controls.retry({}); controls.draw();
+  assert.equal(calls.length, 1, 'history and retry views cannot earn a celebration');
+  controls.retry(null);
+  game.moveLog.push({ to: 'f7', san: 'Kxf7', color: 'b' }); game.annotations.push({ type: 'brilliant', label: 'Brilliant' });
+  controls.draw(); assert.equal(calls.length, 1, 'an old position is not the live tail');
+  controls.view(2); game.settings.mode = 'engine'; game.settings.humanColor = 'w'; controls.draw();
+  assert.equal(calls.length, 1, 'engine play must not be celebrated as the player finding a move');
+  game.settings.mode = 'free'; controls.draw(); controls.draw(); assert.equal(calls.length, 2);
+  game.id = 'game-b'; game.annotations[1].type = 'good'; controls.draw(); assert.equal(calls.length, 2);
+  game.annotations[1].type = 'brilliant'; controls.draw(); assert.equal(calls.length, 3, 'only a confirmed Brilliant triggers feedback');
 });
 
 test("every move-quality badge glyph keeps >=3:1 against its disc", () => {

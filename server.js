@@ -9,6 +9,7 @@ const { createGovernor } = require('./lib/governor');
 const { assessMove, hint, expectedPoints } = require('./lib/tutor');
 const { createArchive } = require('./lib/archive');
 const { createOnline } = require('./lib/online');
+const { createPuzzles } = require('./lib/puzzles');
 const THEMES = require('./public/themes');
 const OPENINGS = JSON.parse(fs.readFileSync(path.join(__dirname,'data','openings.json'),'utf8'));
 const PORT = process.env.PORT || 4655;
@@ -70,6 +71,7 @@ const archive = createArchive(process.env.CHESS_ARCHIVE_DIR || path.join(__dirna
 // Online lookups cache under .cache/online (gitignored); the module only fetches after a route has checked
 // settings.onlineFeatures and the current-game FEN rule below, so nothing here can go online on its own.
 const online = createOnline({ cacheDir: process.env.CHESS_ONLINE_CACHE_DIR || path.join(__dirname,'.cache','online') });
+const puzzles = createPuzzles({ cacheDir: process.env.CHESS_PUZZLE_CACHE_DIR || path.join(__dirname,'.cache','puzzles') });
 // Keep the existing search-budget distribution; replies commit as soon as the search finishes.
 const timing = {thinkTime:()=>randomInt(800,9801),pick:(count)=>randomInt(0,Math.min(count,randomInt(4,6)))};
 let gameId=randomUUID(), revision=0, fens=[rules.startFen()], moveLog=[], annotations=[], evalHist=[];
@@ -527,6 +529,14 @@ app.post('/api/online/tablebase',route(async(req,res)=>{
 app.post('/api/online/cloud-eval',route(async(req,res)=>{
   res.json(await online.cloudEval(requireOnlineGameFen(req.body)));
 }));
+app.get('/api/puzzles',route((req,res)=>res.json(puzzles.starter(req.query.index === undefined ? 0 : Number(req.query.index)))));
+app.post('/api/puzzles/daily',route(async(req,res)=>{
+  if(!settings.onlineFeatures)throw Object.assign(new Error('Enable Lichess lookups in Analysis, then return to Puzzles to load the daily puzzle.'),{status:409,code:'ONLINE_DISABLED'});
+  res.json(await puzzles.daily());
+}));
+app.post('/api/puzzles/move',route((req,res)=>res.json(puzzles.move(req.body?.id,req.body?.moves))));
+app.post('/api/puzzles/hint',route((req,res)=>res.json(puzzles.hint(req.body?.id,req.body?.moves))));
+app.post('/api/puzzles/reveal',route((req,res)=>res.json({solution:puzzles.reveal(req.body?.id,req.body?.moves)})));
 // Five-engine coach view: one first-choice ask per registry engine for a position of this game (the same
 // membership rule as /api/analyze), run strictly sequentially through the interactive slot. {stop:true} cancels.
 app.post('/api/sweep',route((req,res)=>{

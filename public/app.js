@@ -2,6 +2,12 @@ const $ = (selector) => document.querySelector(selector);
 const FILES = 'abcdefgh';
 const NAMES = { k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn' };
 const THEMES = window.CHESS_THEMES;
+const PIECE_SETS = window.PIECE_SETS || [{ id: 'cburnett', name: 'Cburnett', base: 'pieces/' }];
+let pieceSetKey = 'cburnett';
+try {
+  const saved = localStorage.getItem('chess.pieceSet');
+  if (PIECE_SETS.some((set) => set.id === saved)) pieceSetKey = saved;
+} catch (_) {}
 // Pure chess-clock math (public/clock.js); the wiring below keeps it client-side only.
 const CLOCK = window.CHESS_CLOCK;
 // Move-quality icons in the widely recognised review style: coloured disc, bold glyph. Disc colours
@@ -24,6 +30,7 @@ const BADGES = (() => {
   return Object.fromEntries(Object.entries(glyphs).map(([type, [color, glyph]]) => [type, { color, svg: `<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="${color}"/>${glyph}</svg>` }]));
 })();
 let game, analysis, viewIndex = 0, flipped = false, arrowMode = 'best', selected = null;
+let lastAnimatedBrilliant = '';
 let busy = false, promoting = false, gesture = null, focusedSquare = 'e2';
 let pieces = new Map(), boardFen = '', panelFingerprint = '', pollTimer, analysisTimer, toastTimer, pauseTimer;
 let online = true, polling = false, themeKey = 'classic', collection = null, seenArchive = null, restoreId = null, reviewOpenedFor = null;
@@ -43,11 +50,12 @@ const legalByFen = new Map(), hints = new Map(), revealed = new Set();
 // need to outlive the local search they bridge. Emptied the moment the Online switch goes back off.
 const onlineByFen = new Map();
 const board = $('#board');
+const graphSize = { width: 300, height: 70 };
 const ghost = document.createElement('div');
 ghost.id = 'ghost';
 ghost.setAttribute('aria-hidden', 'true');
 document.body.append(ghost);
-const pieceImage = (code) => `pieces/${code === code.toUpperCase() ? 'w' : 'b'}${code.toUpperCase()}.svg`;
+const pieceImage = (code) => `${PIECE_SETS.find((set) => set.id === pieceSetKey).base}${code === code.toUpperCase() ? 'w' : 'b'}${code.toUpperCase()}.svg`;
 const col = (sq) => flipped ? 7 - FILES.indexOf(sq[0]) : FILES.indexOf(sq[0]);
 const row = (sq) => flipped ? +sq[1] - 1 : 8 - +sq[1];
 const colorOf = (code) => code === code.toUpperCase() ? 'w' : 'b';
@@ -86,6 +94,27 @@ function lineText(fen, sans) {
 }
 const moveLabel = (ply) => `${game.fens[ply].split(' ')[5]}${game.moveLog[ply].color === 'w' ? '.' : '…'} ${game.moveLog[ply].san}`;
 
+const choiceValue = (id) => $(`#${id} input:checked`)?.value ?? '';
+function setChoiceValue(id, value) {
+  for (const input of document.querySelectorAll(`#${id} input[type="radio"]`)) input.checked = input.value === String(value);
+}
+function makeChoice(id, value, name) {
+  const label = document.createElement('label'), input = document.createElement('input'), content = document.createElement('span');
+  label.className = 'choice-label';
+  input.type = 'radio'; input.name = id; input.value = value;
+  content.textContent = name;
+  label.append(input, content);
+  $(`#${id} .choice-row`).append(label);
+  return content;
+}
+function applyPieceSet(key) {
+  pieceSetKey = PIECE_SETS.some((set) => set.id === key) ? key : 'cburnett';
+  setChoiceValue('pieceSet', pieceSetKey);
+  const base = PIECE_SETS.find((set) => set.id === pieceSetKey).base;
+  for (const image of document.querySelectorAll('.piece img,#ghost img,#promoChoices img,.player-row img,#reviewPlayers img')) image.src = base + image.getAttribute('src').split('/').pop();
+  try { localStorage.setItem('chess.pieceSet', pieceSetKey); } catch (_) {}
+  document.dispatchEvent(new Event('chessappearancechange'));
+}
 function applyTheme(key) {
   themeKey = THEMES[key] ? key : 'classic';
   const theme = THEMES[themeKey], root = document.documentElement;
@@ -95,11 +124,28 @@ function applyTheme(key) {
   root.style.colorScheme = theme.lightMode ? 'light' : 'dark';
   root.dataset.scheme = theme.lightMode ? 'light' : 'dark';
   $('meta[name="theme-color"]').content = theme.bg;
-  $('#theme').value = themeKey;
+  setChoiceValue('theme', themeKey);
   try { localStorage.setItem('chess-theme', themeKey); } catch (_) {}
+  document.dispatchEvent(new Event('chessappearancechange'));
 }
-for (const [key, theme] of Object.entries(THEMES)) $('#theme').append(new Option(theme.name, key));
+for (const [key, theme] of Object.entries(THEMES)) {
+  const content = makeChoice('theme', key, theme.name), preview = document.createElement('span');
+  preview.className = 'theme-preview'; preview.setAttribute('aria-hidden', 'true');
+  preview.style.setProperty('--preview-light', theme.light); preview.style.setProperty('--preview-dark', theme.dark);
+  for (let i = 0; i < 4; i++) preview.append(document.createElement('i'));
+  content.prepend(preview);
+}
+for (const set of PIECE_SETS) {
+  const content = makeChoice('pieceSet', set.id, set.name), preview = document.createElement('span');
+  preview.className = 'piece-preview'; preview.setAttribute('aria-hidden', 'true');
+  for (const piece of ['wN', 'bQ']) {
+    const image = document.createElement('img'); image.src = `${set.base}${piece}.svg`; image.alt = ''; preview.append(image);
+  }
+  content.prepend(preview);
+}
+setChoiceValue('pieceSet', pieceSetKey);
 try { applyTheme(localStorage.getItem('chess-theme') || 'classic'); } catch (_) { applyTheme('classic'); }
+applyPieceSet(pieceSetKey);
 
 function buildSquares() {
   $('#squares').replaceChildren();
@@ -192,7 +238,9 @@ function updateHighlights() {
   if (!game) return;
   const position = parseBoard(currentFen()), move = retry?.fen ? retry.move : game.moveLog[viewIndex - 1], side = mover();
   const targets = selected ? targetsFor(selected) : new Set();
-  for (const square of document.querySelectorAll('.square')) {
+  // Scope to the game board's own squares: the puzzle workspace reuses the .square class, and a
+  // global query would rewrite its board with undefined names during every analysis poll.
+  for (const square of document.querySelectorAll('#squares .square')) {
     const sq = square.dataset.square, code = position[sq];
     square.classList.toggle('movable', Boolean(code) && colorOf(code) === side);
     square.classList.toggle('sel', sq === selected);
@@ -214,6 +262,25 @@ function renderBoardBadge() {
   el.setAttribute('aria-label', `${move.san}: ${note.label}`);
   el.style.left = `${(col(move.to) + 1) * 12.5}%`;
   el.style.top = `${row(move.to) * 12.5}%`;
+  const key = `${game.id}:${viewIndex}`;
+  if (note.type === 'brilliant' && viewIndex === game.moveLog.length && move.color !== botSide(game.settings) && key !== lastAnimatedBrilliant) {
+    lastAnimatedBrilliant = key;
+    animateBrilliant(el);
+  }
+}
+
+function animateBrilliant(element) {
+  const icon = element.querySelector('svg');
+  if (!icon || matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+  icon.getAnimations().forEach(animation => animation.cancel());
+  icon.animate([{ transform: 'scale(.75) rotate(-12deg)' }, { transform: 'scale(1.25) rotate(4deg)', offset: .45 }, { transform: 'scale(1) rotate(0)' }], { duration: 650, easing: 'cubic-bezier(.16,1,.3,1)' });
+  element.querySelector('.brilliant-burst')?.remove();
+  const burst = document.createElement('span'); burst.className = 'brilliant-burst'; burst.setAttribute('aria-hidden', 'true');
+  burst.innerHTML = '<svg viewBox="0 0 100 100"><path d="M50 10v10m0 60v10M10 50h10m60 0h10M22 22l7 7m42 42 7 7M22 78l7-7m42-42 7-7" fill="none" stroke="#0d7a73" stroke-width="3" stroke-linecap="round"/></svg>';
+  element.append(burst);
+  const animation = burst.animate([{ transform: 'scale(.6) rotate(-8deg)', opacity: 1 }, { transform: 'scale(1.15) rotate(4deg)', opacity: 0 }], { duration: 700, easing: 'ease-out', fill: 'forwards' });
+  animation.finished.then(() => burst.remove(), () => burst.remove());
+  return true;
 }
 
 function select(sq) { selected = sq; updateHighlights(); }
@@ -420,9 +487,7 @@ function scheduleSweep() {
 function syncEngineName() {
   const id = game?.settings?.engineId ?? engineRegistry?.defaultId;
   if (engineRegistry) engineName = engineRegistry.engines.find((entry) => entry.id === id)?.name || engineName;
-  // Keep the header picker and the capability notice (server pickEngines) in step with the adopted state.
-  const pick = $('#engine');
-  if (engineRegistry && pick && pick.value !== id) pick.value = id;
+  setChoiceValue('engine', id);
   const note = $('#engineNote');
   if (note) {
     const text = game?.engineNotices?.join(' ') || '';
@@ -431,14 +496,11 @@ function syncEngineName() {
   }
 }
 
-// The header picker lists every registered engine, plus the coach view as the FIRST entry so the
-// all-engines mode is discoverable right where you pick engines. Capability gaps are handled server-side
-// (pickEngines); the coach entry is a client-side switch, not a settings change.
-function fillEngineSelect() {
-  const pick = $('#engine');
-  if (!engineRegistry || !pick) return;
-  pick.replaceChildren(new Option('⟐ All five · engine votes', '__votes__'), ...engineRegistry.engines.map((entry) => new Option(entry.name, entry.id)));
-  pick.value = game?.settings?.engineId ?? engineRegistry.defaultId;
+function fillEngineChoices() {
+  if (!engineRegistry) return;
+  $('#engine .choice-row').replaceChildren();
+  for (const entry of engineRegistry.engines) makeChoice('engine', entry.id, entry.name);
+  setChoiceValue('engine', game?.settings?.engineId ?? engineRegistry.defaultId);
 }
 
 // Returns true when a new game (or a restored one) arrived.
@@ -613,7 +675,7 @@ function renderPanels(force = false) {
     : bot ? `Your move${check}` : `${colorName(turn)} to move${check}`);
   for (const [id, color] of [['topPlayer', flipped ? 'w' : 'b'], ['bottomPlayer', flipped ? 'b' : 'w']]) {
     const el = $(`#${id}`), isEngine = color === bot;
-    el.querySelector('img').src = `pieces/${color}K.svg`;
+    el.querySelector('img').src = pieceImage(color === 'w' ? 'K' : 'k');
     text(el.querySelector('strong'), bot ? (isEngine ? engineName : 'You') : colorName(color));
     text(el.querySelector('div span'), !isEngine ? `${colorName(color)} pieces` : s.mode === 'engine' ? strengthLabel(s.strength) : (game.survival ? 'Survival mode · full strength' : s.variety ? 'Random top-5 move' : 'Best move · full strength'));
     writeClock(el, color);
@@ -627,9 +689,10 @@ function renderPanels(force = false) {
     : bot ? `You play ${colorName(bot === 'w' ? 'b' : 'w')}. ${engineName} plays ${s.variety ? 'one of its top 5 moves, picked at random' : 'its best move'} as soon as its search finishes.` : 'Your board. Both sides. Every possibility.');
   text($('#footerMode'), `${modeText(s)}. ${s.variant === 'chess960' ? 'To castle, move the king onto its rook.' : 'Standard chess rules.'}`);
   renderControls();
-  if (game.analysisMs) $('#speed').value = String(game.analysisMs);
-  if (s.powerMode) $('#power').value = s.powerMode; // session-level: synced from the server on every poll
-  if (s.onlineFeatures !== undefined) $('#online').value = s.onlineFeatures ? 'on' : 'off'; // session-level opt-in, same pattern
+  if (game.analysisMs) setChoiceValue('speed', game.analysisMs);
+  if (s.powerMode) setChoiceValue('power', s.powerMode);
+  if (s.onlineFeatures !== undefined) $('#online').checked = s.onlineFeatures;
+  $('#compareEngines').setAttribute('aria-pressed', String(arrowMode === 'engines'));
   updateHighlights();
   drawArrows(retry ? null : live, retry ? null : sweepLive);
   maybeFetchHint(live);
@@ -916,7 +979,7 @@ function renderTablebase(fen) {
     const turnOn = document.createElement('button');
     turnOn.className = 'text-action';
     turnOn.textContent = 'Turn Online on';
-    turnOn.onclick = () => { $('#online').value = 'on'; setOnline(true); };
+    turnOn.onclick = () => setOnline(true);
     hint.append('Perfect endgame information exists for this position — ', turnOn);
     body.replaceChildren(hint);
     return;
@@ -1147,18 +1210,24 @@ function renderMoves() {
 }
 
 function renderGraph() {
-  const history = game.evalHist, total = Math.max(1, game.moveLog.length);
-  const y = (cp) => 38 - Math.max(-1, Math.min(1, cp / 500)) * 31;
-  const points = history.map((cp, i) => cp == null ? null : { x: i / total * 300, y: y(cp), i }).filter(Boolean);
+  const history = retry ? [] : game.evalHist, total = Math.max(1, game.moveLog.length);
+  const { width, height } = graphSize, middle = height / 2, left = 24, span = width - 30;
+  const y = (cp) => middle - Math.max(-1, Math.min(1, cp / 500)) * Math.max(0, middle - 7);
+  const points = history.map((cp, i) => cp == null ? null : { x: left + i / total * span, y: y(cp), i }).filter(Boolean);
   const segments = [];
   for (const point of points) {
     if (!segments.length || segments[segments.length - 1].at(-1).i !== point.i - 1) segments.push([]);
     segments.at(-1).push(point);
   }
   const marker = points.find((p) => p.i === viewIndex);
-  $('#graph').innerHTML = '<path class="graph-axis" d="M0 38H300"/>' + segments.map((segment) => `<polyline class="graph-line" points="${segment.map((p) => `${p.x},${p.y}`).join(' ')}"/>`).join('') + (marker ? `<circle class="graph-dot" cx="${marker.x}" cy="${marker.y}" r="3"/>` : '');
-  $('#graph').setAttribute('aria-label', `White evaluation across ${game.moveLog.length} plies. Current: ${$('#evalNum').textContent}.`);
-  text($('#graphEnd'), `${points.length} of ${game.moveLog.length + 1} positions analysed`);
+  const bands = `<rect class="graph-white" x="${left}" width="${span}" height="${middle}"/><rect class="graph-black" x="${left}" y="${middle}" width="${span}" height="${middle}"/>`;
+  const scale = [[500, '+5'], [0, '0'], [-500, '−5']].map(([cp, label]) => `<text class="graph-scale" x="0" y="${y(cp)}" dominant-baseline="central">${label}</text>`).join('');
+  const areas = segments.filter(segment => segment.length > 1).map(segment => `<polygon class="graph-area" points="${segment[0].x},${middle} ${segment.map(p => `${p.x},${p.y}`).join(' ')} ${segment.at(-1).x},${middle}"/>`).join('');
+  const cursor = retry ? '' : `<path class="graph-cursor" d="M${left + viewIndex / total * span} 3V${height - 3}"/>`;
+  $('#graph').setAttribute('viewBox', `0 0 ${width} ${height}`);
+  $('#graph').innerHTML = bands + areas + `<path class="graph-axis" d="M${left} ${middle}H${width - 6}"/>` + cursor + segments.map((segment) => `<polyline class="graph-line" points="${segment.map((p) => `${p.x},${p.y}`).join(' ')}"/>`).join('') + (marker ? `<circle class="graph-dot" cx="${marker.x}" cy="${marker.y}" r="3"/>` : '') + scale;
+  $('#graph').setAttribute('aria-label', retry ? 'Evaluation hidden during retry.' : `White evaluation across ${game.moveLog.length} plies. Current: ${$('#evalNum').textContent}. Display range: -5 to +5 pawns.`);
+  text($('#graphEnd'), retry ? 'Hidden during retry' : `${points.length} of ${game.moveLog.length + 1} positions analysed`);
 }
 
 // Game review. Accuracy follows lichess's published method (lila WinPercent / AccuracyPercent).
@@ -1305,7 +1374,7 @@ function renderReview() {
   $('#reviewPlayers').replaceChildren(...['w', 'b'].map((color) => {
     const card = document.createElement('div');
     card.className = 'review-player';
-    card.innerHTML = `<span><img src="pieces/${color}K.svg" alt="" width="22" height="22">${name(color)}</span><strong>${accuracy[color] == null ? '—' : Math.round(accuracy[color])}</strong><small>Accuracy</small>`;
+    card.innerHTML = `<span><img src="${pieceImage(color === 'w' ? 'K' : 'k')}" alt="" width="22" height="22">${name(color)}</span><strong>${accuracy[color] == null ? '—' : Math.round(accuracy[color])}</strong><small>Accuracy</small>`;
     return card;
   }));
   renderReviewGraph();
@@ -1601,22 +1670,21 @@ function openGallery() { renderGallery(); $('#galleryDialog').showModal(); refre
 function openNewDialog() {
   const s = game?.settings;
   if (!s || busy) return;
-  $('#gameMode').value = s.mode;
-  $('#gameVariant').value = s.variant;
-  $('#gameSide').value = s.humanColor;
-  $('#gameBot').value = s.engineSide || '';
+  setChoiceValue('gameMode', s.mode);
+  setChoiceValue('gameVariant', s.variant);
+  setChoiceValue('gameSide', s.humanColor);
+  setChoiceValue('gameBot', s.engineSide || '');
   $('#gameVariety').checked = Boolean(s.variety);
   $('#gameSeed').value = '';
   // The clock never reaches the server, so the dialog mirrors the armed client-side one; untimed games
   // show Off, and a non-preset value falls back to Custom with its minutes/increment filled in.
   const pick = clock ? `${clock.minutes}+${clock.incrementSeconds}` : 'off';
-  $('#gameClock').value = ['off', '3+2', '5+0', '10+0'].includes(pick) ? pick : 'custom';
+  setChoiceValue('gameClock', ['off', '3+2', '5+0', '10+0'].includes(pick) ? pick : 'custom');
   if (clock) { $('#gameClockMin').value = clock.minutes; $('#gameClockInc').value = clock.incrementSeconds; }
   $('#strength').value = s.strength;
   // The dialog names the chosen engine; where its capabilities run out the server's pickEngines notices say so.
   const chosen = engineRegistry?.engines.find((entry) => entry.id === (s.engineId ?? engineRegistry?.defaultId));
-  const engineOption = $('#gameMode').options[1];
-  if (engineOption) engineOption.textContent = `Play against ${chosen?.name || 'Stockfish'}`;
+  $('#gameMode input[value="engine"]').nextElementSibling.textContent = `Vs ${chosen?.name || 'Stockfish'}`;
   $('#strengthHelp').textContent = chosen && !chosen.elo
     ? `At 10–90% the calibrated Stockfish plays (${chosen.name} has no Elo limits); at 100% ${chosen.name} plays at full strength. Your coach always analyses at full strength.`
     : "Uses Stockfish's own Elo calibration (1320–2800), then unlimited. Your coach always analyses at full strength.";
@@ -1625,13 +1693,13 @@ function openNewDialog() {
   $('#newDialog').showModal();
 }
 function syncSetup() {
-  const engine = $('#gameMode').value === 'engine';
+  const engine = choiceValue('gameMode') === 'engine';
   $('#sideField').classList.toggle('hidden', !engine);
   $('#botField').classList.toggle('hidden', engine);
-  $('#varietyField').classList.toggle('hidden', engine || !$('#gameBot').value);
+  $('#varietyField').classList.toggle('hidden', engine || !choiceValue('gameBot'));
   $('#strengthField').classList.toggle('hidden', !engine);
-  $('#seedField').classList.toggle('hidden', $('#gameVariant').value !== 'chess960');
-  const customClock = $('#gameClock').value === 'custom';
+  $('#seedField').classList.toggle('hidden', choiceValue('gameVariant') !== 'chess960');
+  const customClock = choiceValue('gameClock') === 'custom';
   $('#clockMinField').classList.toggle('hidden', !customClock);
   $('#clockIncField').classList.toggle('hidden', !customClock);
   $('#strengthOutput').textContent = `${$('#strength').value}% · ${strengthLabel(+$('#strength').value)}`;
@@ -1639,23 +1707,23 @@ function syncSetup() {
 $('#gameMode').onchange = $('#gameVariant').onchange = $('#gameBot').onchange = $('#gameClock').onchange = $('#strength').oninput = syncSetup;
 $('#newForm').onsubmit = async (event) => {
   event.preventDefault();
-  const mode = $('#gameMode').value, variant = $('#gameVariant').value, humanColor = $('#gameSide').value, seed = $('#gameSeed').value.trim();
+  const mode = choiceValue('gameMode'), variant = choiceValue('gameVariant'), humanColor = choiceValue('gameSide'), seed = $('#gameSeed').value.trim();
   // The clock rides along client-side: validated here, armed when that fresh game is adopted, never posted.
   let chosen = null;
-  if ($('#gameClock').value !== 'off') {
-    const [minutes, incrementSeconds] = $('#gameClock').value === 'custom'
+  if (choiceValue('gameClock') !== 'off') {
+    const [minutes, incrementSeconds] = choiceValue('gameClock') === 'custom'
       ? [+$('#gameClockMin').value, +$('#gameClockInc').value]
-      : $('#gameClock').value.split('+').map(Number);
+      : choiceValue('gameClock').split('+').map(Number);
     const refuse = (message) => { $('#setupError').textContent = message; $('#setupError').classList.remove('hidden'); };
     if (!Number.isInteger(minutes) || minutes < 1 || minutes > 180) return refuse('Clock minutes must be a whole number from 1 to 180.');
     if (!Number.isInteger(incrementSeconds) || incrementSeconds < 0 || incrementSeconds > 60) return refuse('Clock increment must be a whole number of seconds from 0 to 60.');
     chosen = { minutes, incrementSeconds };
   }
   pendingClock = chosen;
-  const engineSide = mode === 'free' ? $('#gameBot').value || null : null;
+  const engineSide = mode === 'free' ? choiceValue('gameBot') || null : null;
   const body = { mode, variant, humanColor, engineSide, variety: Boolean(engineSide) && $('#gameVariety').checked, strength: +$('#strength').value, seed: variant === 'chess960' && seed ? +seed : null, theme: themeKey, flipped: (mode === 'engine' && humanColor === 'b') || engineSide === 'w' };
   const ok = await mutate('new', body, (error) => { $('#setupError').textContent = error.message; $('#setupError').classList.remove('hidden'); });
-  if (ok) $('#newDialog').close();
+  if (ok) { $('#newDialog').close(); if (!$('#puzzleWorkspace').classList.contains('hidden')) puzzles.close(); }
   else pendingClock = null; // the choice belongs to the game it was made for, never the next one
 };
 $('#new').onclick = $('#modeButton').onclick = openNewDialog;
@@ -1668,26 +1736,41 @@ $('#restoreCancel').onclick = () => $('#restoreDialog').close();
 $('#restoreConfirm').onclick = async () => {
   $('#restoreDialog').close();
   const entry = collection?.entries.find((item) => item.id === restoreId);
-  if (await mutate('restore', { id: restoreId, revision: game.revision })) { $('#galleryDialog').close(); if (entry) setView(entry.ply); }
+  if (await mutate('restore', { id: restoreId, revision: game.revision })) { $('#galleryDialog').close(); if (!$('#puzzleWorkspace').classList.contains('hidden')) puzzles.close(); if (entry) setView(entry.ply); }
 };
-$('#theme').onchange = () => { applyTheme($('#theme').value); api('settings', { theme: themeKey }).catch(() => {}); };
-// Power mode is a session-level setting: one POST, and the next poll syncs the select back from the server.
-$('#power').onchange = () => api('settings', { powerMode: $('#power').value }).then(pollAnalysis).catch((error) => notify(error.message, true));
+$('#appearance').onclick = () => $('#appearanceDialog').showModal();
+$('#appearanceClose').onclick = () => $('#appearanceDialog').close();
+$('#brilliantPreview').innerHTML = BADGES.brilliant.svg;
+$('#previewBrilliant').onclick = () => text($('#brilliantPreviewStatus'), animateBrilliant($('#brilliantPreview')) ? '' : 'Reduced motion is on.');
+$('#theme').onchange = () => { applyTheme(choiceValue('theme')); api('settings', { theme: themeKey }).catch(() => {}); };
+$('#pieceSet').onchange = () => applyPieceSet(choiceValue('pieceSet'));
+// Puzzles own their board and state; we lend the current piece images and swap the game view
+// out while the puzzle workspace is open. The shared game on the server is untouched.
+const puzzles = window.CHESS_PUZZLES.init({
+  root: $('#puzzleWorkspace'),
+  openButton: $('#openPuzzles'),
+  onOpen: () => { cancelGesture(); $('.workspace-heading').classList.add('hidden'); $('.workspace').classList.add('hidden'); $('.app-footer').classList.add('hidden'); if (clock && !clock.flagged && !game?.over) notify('Your game clock keeps running while you solve puzzles.'); },
+  onClose: () => { $('.workspace-heading').classList.remove('hidden'); $('.workspace').classList.remove('hidden'); $('.app-footer').classList.remove('hidden'); },
+  pieceUrl: pieceImage,
+});
+document.addEventListener('chessappearancechange', () => puzzles.refreshAppearance());
+$('#power').onchange = () => api('settings', { powerMode: choiceValue('power') }).then(pollAnalysis).catch((error) => notify(error.message, true));
 // So is the engine pick: the server re-aims its processes (with Stockfish filling any capability gap) and the
 // next poll brings back the name and any notice.
-$('#engine').onchange = () => {
-  if ($('#engine').value === '__votes__') {
-    // The top-bar door into the coach view: every engine answers with its own coloured arrow (the band
-    // under the board names the colours). The picker snaps back to the single analysis engine, which
-    // still drives Best mode, grading and play.
-    $('#engine').value = game?.settings?.engineId ?? engineRegistry?.defaultId ?? 'stockfish';
+function chooseEngine(id) {
+  if (id === '__votes__') {
     if (arrowMode !== 'engines') { setArrowMode('engines'); scheduleSweep(); renderPanels(true); }
     notify('Engine votes: every engine answers with its own coloured arrow.');
     return;
   }
   // Picking a single engine leaves the coach view; Best mode and everything else follow the choice.
   if (arrowMode === 'engines') { stopSweepRemote(); setArrowMode('best'); renderPanels(true); }
-  api('settings', { engineId: $('#engine').value }).then(pollAnalysis).catch((error) => notify(error.message, true));
+  api('settings', { engineId: id }).then(pollAnalysis).catch((error) => { syncEngineName(); notify(error.message, true); });
+}
+$('#engine').onchange = () => chooseEngine(choiceValue('engine'));
+$('#compareEngines').onclick = () => {
+  if (arrowMode !== 'engines') return chooseEngine('__votes__');
+  stopSweepRemote(); setArrowMode('best'); renderPanels(true);
 };
 // And so is Online, the local-first opt-in: one POST, the next poll syncs the switch back. Enabling fetches
 // the position on screen once, immediately; disabling forgets every cached answer so nothing online lingers.
@@ -1696,7 +1779,7 @@ async function setOnline(on) {
     const data = await api('settings', { onlineFeatures: on });
     if (game) game.settings = { ...game.settings, ...data.settings };
   } catch (error) {
-    $('#online').value = game?.settings?.onlineFeatures ? 'on' : 'off';
+    $('#online').checked = Boolean(game?.settings?.onlineFeatures);
     return notify(error.message, true);
   }
   if (!on) onlineByFen.clear();
@@ -1704,7 +1787,7 @@ async function setOnline(on) {
   pollAnalysis();
   renderPanels();
 }
-$('#online').onchange = () => setOnline($('#online').value === 'on');
+$('#online').onchange = () => setOnline($('#online').checked);
 // At the live position a takeback is the familiar one-move undo; off-tail it also discards the browsed continuation,
 // so the cost is confirmed first (a variation tree is out of scope — see README). The off-tail post pins the
 // revision it quoted, so a reply that lands while the dialog is open can never be silently swallowed with it.
@@ -1742,13 +1825,31 @@ $('#coach').onclick = () => {
 };
 $('#retryEngine').onclick = () => api('retry', {}).then(() => pollAnalysis()).catch((error) => notify(error.message, true));
 $('#speed').onchange = async () => {
-  try { await api('settings', { analysisMs: +$('#speed').value }); pollAnalysis(); }
+  try { await api('settings', { analysisMs: +choiceValue('speed') }); pollAnalysis(); }
   catch (error) { notify(error.message, true); }
 };
 $('#navFirst').onclick = () => setView(0);
 $('#navPrev').onclick = () => setView(viewIndex - 1);
 $('#navNext').onclick = () => setView(viewIndex + 1);
 $('#navLast').onclick = () => setView(game?.moveLog.length || 0);
+
+const evaluationSection = $('.advantage-section');
+const wideEvaluation = matchMedia('(min-width: 761px) and (min-height: 501px)');
+const positionEvaluation = () => {
+  const docked = wideEvaluation.matches;
+  (docked ? $('#boardEvaluation') : $('#analysisPanel')).append(evaluationSection);
+  if (docked) $('#evaluationScore').append($('#evalNum'));
+  else $('#topPlayer').insertBefore($('#evalNum'), $('#topPlayer .player-turn'));
+  $('.stage').classList.toggle('chart-docked', docked);
+};
+wideEvaluation.addEventListener('change', positionEvaluation);
+positionEvaluation();
+new ResizeObserver(([entry]) => {
+  const { width, height } = entry.contentRect;
+  if (!width || !height) return;
+  graphSize.width = width; graphSize.height = height;
+  if (game) renderGraph();
+}).observe($('.graph-viewport'));
 
 const tabs = [...document.querySelectorAll('[role="tab"]')];
 function selectTab(tab, focus = false) {
@@ -1771,7 +1872,7 @@ tabs.forEach((tab, i) => {
 });
 
 document.addEventListener('keydown', (event) => {
-  if (!game || event.target.closest('dialog,select,input,textarea') || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (!game || !$('#puzzleWorkspace').classList.contains('hidden') || event.target.closest('dialog,input,textarea') || event.ctrlKey || event.metaKey || event.altKey) return;
   if (event.key === 'Escape') { cancelGesture(); select(null); return; }
   if (board.contains(event.target) && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', ' '].includes(event.key)) {
     event.preventDefault();
@@ -1797,4 +1898,4 @@ const startHidden = document.visibilityState === 'hidden';
 pauseSent = startHidden;
 pausePost({ hidden: startHidden, tab: TAB_ID, hello: true });
 // One registry fetch; the name then follows settings.engineId on every adopted state.
-api('engines').then((data) => { engineRegistry = data; fillEngineSelect(); syncEngineName(); renderPanels(); }).catch(() => {});
+api('engines').then((data) => { engineRegistry = data; fillEngineChoices(); syncEngineName(); renderPanels(); }).catch(() => {});

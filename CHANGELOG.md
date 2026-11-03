@@ -2,6 +2,22 @@
 
 Published versions and source archives are available on [GitHub Releases](https://github.com/Ekka-Barber/Chess-Play-Fun/releases).
 
+## Unreleased
+
+- Replaced all configuration dropdowns with visible choices, including engine selection, compute budgets, game setup, and appearance previews.
+- Added four licensed piece sets alongside Cburnett: Merida, Chessnut, Fantasy, and RhosGFX.
+- Moved the desktop evaluation chart above the board at its full width while preserving the original board size. Added the current score, a ±5-pawn scale, subtle White/Black shading, and a current-position marker. Unknown positions remain gaps, retry answers stay hidden, and narrow or short screens keep the chart in Analysis. Resizing redraws locally without extra engine searches.
+- Added an isolated puzzle workspace with four local starters, an opt-in Lichess daily puzzle, legal input, opponent replies, hints, solution reveal, retry, and next-puzzle controls.
+- Fixed unequal puzzle rows that stretched occupied squares and pieces. Busy, revealed, and completed boards retain their colours.
+- Preserve the open puzzle, accepted moves, hints, revealed solution, and completion state across refreshes in the same tab. Support browser Back between the puzzle and game views.
+- Label hinted completions as assisted; retry resets that assistance state.
+- Show a visible message when the browser cannot save puzzle progress.
+- Add a short, one-shot Brilliant impact and ray burst for confirmed player moves, with an Appearance preview and reduced-motion fallback. Engine moves, history browsing, retries, and repeated polls do not trigger it.
+- Keep main-game shortcuts inactive in puzzle mode. Starting a new game or restoring a saved game returns to its board.
+- Make the comparison button stop an active five-engine comparison as well as start one.
+- Validate daily puzzle identities and honour both seconds and HTTP-date forms of `Retry-After`.
+- Replace a timing-dependent engine-preview test with explicit synchronization and expand real-browser puzzle, navigation, and evaluation-chart regression checks. All 128 automated tests pass.
+
 ## [4.0.2](https://github.com/Ekka-Barber/Chess-Play-Fun/releases/tag/v4.0.2) - 2026-11-03
 
 ### Improved

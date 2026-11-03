@@ -2,26 +2,28 @@
 
 **Compare five engines on the same board. Understand your next move.**
 
-A local chess workbench for Windows. Play Standard or Chess960, watch candidate moves appear as the engine searches, and review your mistakes with explanations and retry drills. The engines run on your computer; optional Lichess lookups stay off until you enable them.
+A local chess workbench for Windows. Play Standard or Chess960, compare five engines, solve puzzles, and review mistakes with explanations and retry drills. Candidate moves appear while the engines search on your computer. Optional Lichess features stay off until you enable them.
 
 [![CI](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml/badge.svg)](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml)
-![116 tests](https://img.shields.io/badge/tests-116-407548)
+![128 tests](https://img.shields.io/badge/tests-128-407548)
 ![Windows x64](https://img.shields.io/badge/platform-Windows_x64-625846)
 [![MIT license](https://img.shields.io/badge/code-MIT-625846)](LICENSE)
 
-![CHESS running locally: five engines suggest moves on the same board, with matching colours, evaluations, and a detailed analysis panel.](assets/screens/app-engine-votes.png)
+![Current desktop workspace: a full-width evaluation chart above the original-size board, visible engine choices, compute budgets, and the Coach panel.](assets/screens/app-evaluation-desktop.png)
 
-[Install](#run-locally) · [Use the board](#use-the-board) · [Engine guide](#choose-your-engine) · [Performance](#measured-performance) · [Changelog](CHANGELOG.md) · [Releases](https://github.com/Ekka-Barber/Chess-Play-Fun/releases)
+[Install](#run-locally) · [Use the board](#use-the-board) · [Puzzles](#solve-puzzles) · [Engine guide](#choose-your-engine) · [Performance](#measured-performance) · [Changelog](CHANGELOG.md) · [Releases](https://github.com/Ekka-Barber/Chess-Play-Fun/releases)
 
-## Latest: v4.0.2
+## Latest changes
 
-- Smaller hollow legal-move markers replace the heavy filled dots. Capture rings leave the pieces visible.
-- A softer evaluation rail includes an equality midpoint, a quicker transition, and a labelled score above the board. Unknown evaluations and retry drills no longer display a misleading even position.
-- Five-engine arrows use lower opacity, including their hover state, so the board stays readable when engines agree.
-- Candidate moves stream before grading finishes. Free-play engine replies no longer wait through an artificial pause.
-- Lichess cloud requests use the documented `multiPv` parameter. Online lookups remain optional and cached.
+These changes are available on `main`; the latest tagged release is [v4.0.2](https://github.com/Ekka-Barber/Chess-Play-Fun/releases/tag/v4.0.2).
 
-Verified with **116 passing tests**, desktop and phone browser checks, board flipping, and evaluation states for equal positions, advantages, mate, unknown scores, and retries. [See the updated board](assets/screens/app-board-controls.png) or [read the release notes](CHANGELOG.md).
+- **Choose directly.** All ten configuration dropdowns have been replaced with visible choices. Select engines and compute budgets beside the board; open Appearance for six board themes and five piece sets.
+- **Keep the board large.** The desktop evaluation chart spans its width without reducing the board size. It includes the current score, a ±5-pawn scale, subtle White/Black shading, and a position marker. Unanalysed positions remain gaps. Phones and short landscape screens keep the chart in Analysis.
+- **Solve and return.** Four local starter puzzles work offline, with optional Lichess daily puzzles. Squares stay equal, pieces keep their proportions, and refreshing restores this tab's puzzle and progress.
+- **Recognise a Brilliant.** Confirmed player moves receive a brief, one-shot impact and ray burst. Appearance includes a preview; reduced motion retains the static marker. No extra engine search is needed.
+- **Keep analysis responsive.** Suggestions stream before grading finishes, engine replies have no artificial pause, and five-engine comparison can be started or stopped directly. Softer arrows and hollow legal-move markers keep pieces visible.
+
+Verified with **128 passing tests**, plus Chromium gameplay, puzzle, refresh, and desktop/phone layout checks. [Read the changelog](CHANGELOG.md) for the complete fixes and release history.
 
 ## Run locally
 
@@ -81,7 +83,7 @@ The **Arrows** button cycles through **Off → Best → Engines**.
 | **Best** | Three candidate moves in a green ranking: stronger lines are darker and wider. Slim red arrows show the opponent's ideas if you pass. |
 | **Engines** | Each installed engine's first choice in its own colour. Agreeing engines occupy separate lanes instead of covering one another. The band below the board identifies each engine and evaluation. |
 
-You can enter comparison mode directly from **Engine → All five · engine votes**. Open the **Analysis** tab for each engine's move, evaluation, and depth. Hover or focus a row to isolate its arrow.
+Click **Compare all five engines** below the engine choices to start comparison; click it again to stop. Open the **Analysis** tab for each engine's move, evaluation, and depth. Hover or focus a row to isolate its arrow.
 
 Comparison requests use a 300 ms budget per engine and search one engine at a time. Initialization can overlap. A playing engine's reply gets priority over analysis work.
 
@@ -162,16 +164,17 @@ Idle engines quit after five minutes and restart on demand. Live analysis pauses
 
 ## Optional online lookups
 
-In **Analysis → Online**, choose **On** to enable two Lichess services for positions in the current game:
+In **Analysis**, enable **Lichess lookups** for these optional features:
 
 | Service | What it provides | Local cache |
 | --- | --- | --- |
 | Tablebase | Exact endgame results for positions with seven pieces or fewer, including DTZ/DTM when available. | Stored without expiry. |
 | Cloud evaluation | A stored evaluation and principal variation for the current position, when Lichess has one. | 24 hours. |
+| Daily puzzle | A validated puzzle fetched only when you click **Load Lichess daily** in Puzzles. | Reused for the same UTC day; upstream retry delays are respected. |
 
-The server checks that a requested FEN belongs to the game before sending it upstream. Tablebase piece counting happens locally. Cache files live under `.cache/online/`, and upstream failures return a readable status in the app.
+For tablebase and cloud requests, the server checks that the FEN belongs to the game before sending it upstream. Tablebase piece counting happens locally. Position caches live under `.cache/online/`; daily puzzles use `.cache/puzzles/`. Upstream failures return a readable status in the app.
 
-With Online off, play and local analysis work without those services. Initial dependency and engine downloads still require an internet connection.
+With lookups off, play, local analysis, and the four starter puzzles work without those services. Initial dependency and engine downloads still require an internet connection.
 
 ## Controls
 
@@ -186,7 +189,17 @@ Use drag and drop, click a piece then its destination, or navigate by keyboard. 
 | `Home` / `End` | First/latest position. |
 | `F` | Flip the board. |
 
-The app includes six board themes, labelled board squares, visible focus states, reduced-motion support, and a mobile layout. Theme choice is remembered in your browser.
+Configuration uses visible choices throughout. **Appearance** offers six board themes and five piece sets: Cburnett, Merida, Chessnut, Fantasy, and RhosGFX. Both choices are remembered in your browser. Board squares have labels and visible focus states, and the interface supports reduced motion and phone layouts.
+
+A confirmed player Brilliant gets a brief badge impact and ray burst, once per move while this page is open. The effect does not request more engine analysis. **Appearance → Preview brilliant** demonstrates it; reduced-motion preferences retain the static marker.
+
+### Solve puzzles
+
+Open **Puzzles** for three original mate-in-one exercises and a longer combination from [Lichess's public API example](https://github.com/lichess-org/api/blob/master/doc/specs/examples/puzzles-getDailyPuzzle.json.yaml). These four starters use the local server and need no internet connection. **Load Lichess daily** fetches a puzzle only when requested and requires **Lichess lookups** to be enabled in Analysis.
+
+Correct moves include the opponent's reply. Hints, solution reveal, retry, and next-puzzle controls are available. A result completed after a hint is labelled as assisted. Refreshing keeps this tab's puzzle, accepted moves, hint or revealed solution, and completion state. Browser Back returns between puzzles and the game. A new game or restored collection entry returns to the game view.
+
+Puzzle progress is separate from the shared game and stored in this tab's session storage. An active game clock continues running. Daily attempts loaded before a server restart may need to be loaded again; the server validates moves against puzzles known to its current process.
 
 ## Know the limits
 
@@ -207,9 +220,9 @@ npm ci
 npm test
 ```
 
-The local audit passed **116 tests**. Tests stub the engine boundary and run without downloading the binaries; the alternate-engine switch case skips when no second engine is installed. [GitHub Actions](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml) runs the suite on Node 20 and 22.
+The local audit passed **128 tests**. Tests stub the engine boundary and run without downloading the binaries; the alternate-engine switch case skips when no second engine is installed. [GitHub Actions](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml) runs the suite on Node 20 and 22. The Chromium harness also accepts a debugging port and an explicit disposable app URL: `node test/browser.cjs <debug-port> http://127.0.0.1:4660/`. It replaces that server's game while testing.
 
-Coverage includes legal moves and Chess960 castling, stale requests, engine fallback and switching, progressive analysis, exclusive search scheduling, tab visibility, clocks, move grading, retry judging, archive writes, online opt-in, arrow geometry, and contrast rules.
+Coverage includes legal moves and Chess960 castling, stale requests, engine fallback and switching, progressive analysis, exclusive search scheduling, tab visibility, clocks, move grading, retry judging, archive writes, online opt-in, legal puzzle lines and daily-puzzle validation, evaluation-chart gaps and retry privacy, arrow geometry, and contrast rules.
 
 Separate browser checks exercised all five engines at 100% strength, engine-vote cycling, history controls, and six themes at desktop and narrow widths. The audit recorded zero automated Axe violations in the checked state. That result is not an accessibility certification.
 
@@ -224,6 +237,7 @@ Separate browser checks exercised all five engines at 100% strength, engine-vote
 | [lib/tutor.js](lib/tutor.js) | Move grading, hints, and sacrifice assessment. |
 | [lib/archive.js](lib/archive.js) | Brilliant-move images, PGN, metadata, and collection storage. |
 | [lib/online.js](lib/online.js) | Opt-in Lichess requests and disk caching. |
+| [lib/puzzles.js](lib/puzzles.js) | Starter and daily puzzles, legal solution validation, hints, and daily caching. |
 | [public/](public/) | Board UI, themes, clocks, review tools, and piece assets. |
 | [scripts/](scripts/) | Engine setup and screenshot capture tools. |
 | [test/](test/) | Regression suite. |
@@ -234,6 +248,6 @@ For a bug report, include the selected engine, variant, power mode, Node version
 
 The application code uses the [MIT license](LICENSE). Downloaded engines have their own upstream licenses; review the projects linked in the engine table before redistributing binaries.
 
-The app uses [chessops](https://github.com/niklasf/chessops), [Express](https://expressjs.com/), [resvg-js](https://github.com/yisibl/resvg-js), the [Cburnett chess pieces](public/pieces/LICENSE.txt), and the self-hosted [Sentient typeface](public/fonts/LICENSE.txt). Its accuracy calculations follow the published Lichess approach; its move classifications are local heuristics.
+The app uses [chessops](https://github.com/niklasf/chessops), [Express](https://expressjs.com/), [resvg-js](https://github.com/yisibl/resvg-js), [five attributed chess-piece sets](public/pieces/README.md), and the self-hosted [Sentient typeface](public/fonts/LICENSE.txt). Its accuracy calculations follow the published Lichess approach; its move classifications are local heuristics.
 
 README screenshots show the running application with real engine results. Optional poster artwork in `assets/` was generated with GPT Image 2.5 via Higgsfield and is separate from the app interface.

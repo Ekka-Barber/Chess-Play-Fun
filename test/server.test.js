@@ -27,29 +27,36 @@ async function post(path, body = {}, status = 200) {
 const state = () => fetch(`${origin}/api/state`).then((r) => r.json());
 async function moves(sequence) { let result; for (const uci of sequence.split(' ')) result = await post('move', { from: uci.slice(0,2), to: uci.slice(2,4), ...(uci[4] ? { promotion: uci[4] } : {}) }); return result; }
 
-test('next suggestions precede grading and previews stay out of the completed-result cache', async () => {
+test('next suggestions precede grading and previews stay out of the completed-result cache', { timeout: 10000 }, async () => {
   const original = engine.go, calls = [];
+  let releaseInitial, releasePreview, previewReady, targetFen;
+  const initialGate = new Promise(resolve => { releaseInitial = resolve; });
+  const previewGate = new Promise(resolve => { releasePreview = resolve; });
+  const previewStarted = new Promise(resolve => { previewReady = resolve; });
   engine.go = async (fen, multipv, ms, options = {}) => {
     calls.push({ fen, multipv });
     const raw = await original(fen);
     options.onUpdate?.(raw);
-    await delay(60);
+    if (calls.length === 1) await initialGate;
+    else if (fen === targetFen) { previewReady(); await previewGate; }
     return raw;
   };
   try {
     await post('new', { mode: 'free', engineSide: null, variant: 'standard' });
     const game = await moves('a2a3');
-    for (let i = 0; i < 50 && calls.length < 2; i++) await delay(5);
+    targetFen = game.fens[1]; releaseInitial();
+    await previewStarted;
     assert.equal(calls[1]?.fen, game.fens[1], 'search the displayed position before the ungraded pre-position');
     const preview = await fetch(`${origin}/api/analysis`).then(r => r.json());
     assert.equal(preview.phase, 'thinking');
     assert.ok(preview.lines[0]?.san, 'preview PVs use the normal client line format');
     await fetch(`${origin}/api/hint?ply=1`).then(r => assert.equal(r.status, 409, 'partial results cannot judge a hint or retry'));
+    releasePreview();
     await engine.chain;
     const completed = await fetch(`${origin}/api/analysis`).then(r => r.json());
     assert.equal(completed.phase, 'ready');
     assert.ok((await state()).annotations.every(a => a.type !== 'pending'), 'grading still completes');
-  } finally { engine.go = original; }
+  } finally { releaseInitial(); releasePreview(); engine.go = original; await engine.chain; }
 });
 
 test('switching engines searches again instead of relabelling another engine cache', async t => {
