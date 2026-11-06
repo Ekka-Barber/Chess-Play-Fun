@@ -42,8 +42,7 @@ let settings = {mode:'free',variant:'standard',humanColor:'w',engineSide:null,va
 const governor=createGovernor({mode:settings.powerMode,preempt:()=>{scheduleAnalysis(tailPly());stopSweep();}});
 const currentEngine=()=>ENGINES.find(entry=>entry.id===settings.engineId)||ENGINES[0];
 // Engines are used wherever their probed capabilities allow; Stockfish fills any gap and the UI is told why.
-// Probed against the shipped binaries: only Stockfish has UCI_Elo (1320-2800), Obsidian lacks UCI_Chess960,
-// viridithas answers a single line (no MultiPV), which the grading, threat and variety passes all depend on.
+// Only Stockfish has UCI_Elo (1320-2800), and Obsidian lacks UCI_Chess960.
 function pickEngines(chosen,game=settings) {
   const calibrated=ENGINES.find(entry=>entry.id==='stockfish')||ENGINES[0];
   const notices=[];
@@ -62,10 +61,10 @@ const playingEngine = new Engine({threads:budgets.playing,hash:hashBudgets.playi
 // The deep whole-game review runs on its own process so browsing the game never interrupts its long searches; it
 // never takes the interactive slot, it is only thread-capped and runs at the mode's deep OS priority.
 const reviewEngine = new Engine({threads:budgets.deep,hash:hashBudgets.deep,exe:currentEngine().path,priority:PRIORITY[governor.deepPriority]});
-// The five-engine coach view ("Engines" arrow mode): one Engine per registry entry. Every sweep ask is gated
+// The engine comparison ("Engines" arrow mode): one Engine per registry entry. Every sweep ask is gated
 // 'analysis' on the SAME interactive slot, so coach engines never search in parallel with each other or with live
 // analysis, and a game reply preempts them exactly like an analysis search. Hash stays small — a 300 ms ask
-// cannot fill more, and five live processes stay memory-bounded on the Surface budget.
+// cannot fill more, and the live processes stay memory-bounded on the Surface budget.
 const coachEngines=ENGINES.map(entry=>new Engine({threads:budgets.analysis,hash:64,exe:entry.path,gate:()=>governor.acquire('analysis')}));
 const archive = createArchive(process.env.CHESS_ARCHIVE_DIR || path.join(__dirname,'Brilliant Moves'));
 // Online lookups cache under .cache/online (gitignored); the module only fetches after a route has checked
@@ -93,7 +92,7 @@ function deepProgress() {
   return {...deep,depth:DEEP.depth,done,total:fens.length};
 }
 let computer={phase:'idle',error:null};
-// Five-engine sweep: each registry engine's first choice for one position, asked strictly one at a time through
+// Engine sweep: each registry engine's first choice for one position, asked strictly one at a time through
 // the interactive slot. movetime-only (no depth target) — a comparative snapshot sized for the Surface budget.
 const SWEEP={ms:300};
 let sweepTicket=0, sweep={phase:'idle',results:[]}, sweepCache=new Map();
@@ -537,7 +536,7 @@ app.post('/api/puzzles/daily',route(async(req,res)=>{
 app.post('/api/puzzles/move',route((req,res)=>res.json(puzzles.move(req.body?.id,req.body?.moves))));
 app.post('/api/puzzles/hint',route((req,res)=>res.json(puzzles.hint(req.body?.id,req.body?.moves))));
 app.post('/api/puzzles/reveal',route((req,res)=>res.json({solution:puzzles.reveal(req.body?.id,req.body?.moves)})));
-// Five-engine coach view: one first-choice ask per registry engine for a position of this game (the same
+// Engine comparison: one first-choice ask per registry engine for a position of this game (the same
 // membership rule as /api/analyze), run strictly sequentially through the interactive slot. {stop:true} cancels.
 app.post('/api/sweep',route((req,res)=>{
   const body=req.body||{};

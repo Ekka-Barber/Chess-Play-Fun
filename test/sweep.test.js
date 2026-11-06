@@ -1,4 +1,4 @@
-// The five-engine coach view (/api/sweep): per-engine first choices for positions of the current game,
+// Engine comparison (/api/sweep): per-engine first choices for positions of the current game,
 // sequential by construction (the governor's one interactive slot — pinned in governor.test.js), progressive
 // through the analysis poll, and correctly parked by a hidden-tab pause, reset by restore/undo, and guarded
 // by the same membership + revision rules as /api/analyze. The archive dir is redirected BEFORE the server

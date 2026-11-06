@@ -238,7 +238,7 @@ input[type='number'] { min-height: 36px; border: 0; border-radius: 4px; color: v
 .band-chip i { flex: none; width: 13px; height: 13px; border-radius: 2px; }
 .band-chip b { font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
 .band-chip.dim { opacity: .55; }
-/* Engines-mode legend (the five-engine coach view): one row per registry engine, swatch in its arrow colour.
+/* Engine comparison legend: one row per registry engine, swatch in its arrow colour.
    Rows are buttons — hover/focus highlights that engine's arrow on the board; dim rows are skipped/pending. */
 .engine-votes { margin-top: 18px; }
 .engine-votes h3 { font-size: 12px; font-weight: 600; margin: 0 0 9px; }.engine-votes h3 span { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 5px; }

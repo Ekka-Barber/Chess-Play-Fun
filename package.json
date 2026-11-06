@@ -2,7 +2,7 @@
   "name": "chess-play-fun",
   "version": "4.0.2",
   "private": true,
-  "description": "A local chess workspace: play five world-class engines, learn from a coach that grades every move, and never slow your machine down.",
+  "description": "A local chess workspace with four engines and a coach that grades every move.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

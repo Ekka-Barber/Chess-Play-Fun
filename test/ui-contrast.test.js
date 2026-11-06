@@ -4,7 +4,7 @@
 // arrows follow the reference boards — read from what lichess's chessground actually ships (brush table in
 // src/state.ts) and chess.com's game-review arrows — SATURATED mid-tone global colours drawn TRANSLUCENT
 // with fat shafts. This suite pins that profile: every arrow colour stays inside the vivid mid-tone band,
-// the five engine hues stay pairwise hue-separated, the best-line ladder descends in opacity and width
+// engine hues stay pairwise hue-separated, the best-line ladder descends in opacity and width
 // (darker = stronger), and drawArrows takes its colours only from the shared constants. A regression to
 // the near-black "contrast-legal" tints (which nobody could read at a glance) fails here.
 //
@@ -167,9 +167,9 @@ test("arrow colours keep the reference-board vivid profile (saturated mid-tones,
   }
 });
 
-test("the five engine hues stay pairwise separated and clear of the threat red", () => {
+test("engine hues stay pairwise separated and clear of the threat red", () => {
   const { ENGINE_PALETTE, ARROWS } = arrowConsts;
-  assert.ok(ENGINE_PALETTE.length >= 5, "a full registry needs five engine colours");
+  assert.equal(ENGINE_PALETTE.length, require("../engines.json").length, "one colour per engine");
   for (let i = 0; i < ENGINE_PALETTE.length; i++) {
     assert.ok(hueGap(ARROWS.threat.color, ENGINE_PALETTE[i].hue) >= 30,
       `engine hue ${ENGINE_PALETTE[i].hue} sits within 30° of threat red ${ARROWS.threat.color}`);
@@ -194,7 +194,7 @@ test("the best-line ladder descends in opacity and width (darker = stronger), th
   assert.ok(opacities[2] <= 0.35, "rank 3 is a breath — the light end of the ladder");
   assert.ok(ARROWS.threat.opacities[0] < opacities[0] && ARROWS.threat.widths[0] < widths[0],
     "threats never out-shadow the best line");
-  assert.ok(ARROWS.engine.opacity >= 0.3 && ARROWS.engine.opacity <= 0.45, "five-engine arrows stay soft when displayed together");
+  assert.ok(ARROWS.engine.opacity >= 0.3 && ARROWS.engine.opacity <= 0.45, "engine arrows stay soft when displayed together");
   assert.ok(ARROWS.engine.width <= 14 && widths[0] <= 14, "shafts leave the majority of each square visible");
   // The ladder must be composited-visible on the lightest shipped square: rank 3 over the lightest theme
   // square still shifts it perceptibly (>1.15:1 against the square it covers).

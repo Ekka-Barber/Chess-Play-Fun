@@ -8,14 +8,6 @@
     "multipv": true
   },
   {
-    "id": "berserk",
-    "name": "Berserk 14",
-    "path": "engines/berserk/berserk-14-avx2-pext.exe",
-    "chess960": true,
-    "elo": false,
-    "multipv": true
-  },
-  {
     "id": "obsidian",
     "name": "Obsidian 16.0",
     "path": "engines/obsidian/Obsidian160-avx2-pext.exe",
@@ -32,11 +24,11 @@
     "multipv": true
   },
   {
-    "id": "viridithas",
-    "name": "Viridithas 20.0.0",
-    "path": "engines/viridithas/viridithas-20-win-x86-64-v3.exe",
+    "id": "lc0",
+    "name": "Leela Chess Zero 0.32.1",
+    "path": "engines/lc0/lc0.exe",
     "chess960": true,
     "elo": false,
-    "multipv": false
+    "multipv": true
   }
 ]

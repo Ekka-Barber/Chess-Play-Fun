@@ -456,7 +456,7 @@ async function api(path, body) {
 // Pause pings ride fetch keepalive so the pagehide un-hide still reaches the server while the tab is closing.
 const pausePost = (body) => fetch('/api/pause', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true }).catch(() => {});
 
-// ---- five-engine coach view ("Engines" arrow mode) ----
+// ---- engine comparison ("Engines" arrow mode) ----
 // The Arrows button cycles Off -> Best -> Engines (aria-pressed false/true/mixed). Engines mode asks the server,
 // strictly one engine at a time, for each registry engine's first choice at the position on screen
 // (POST /api/sweep); answers stream in through the analysis poll and render progressively. Leaving the mode
@@ -649,7 +649,7 @@ function renderPanels(force = false) {
   const fen = currentFen(), turn = fen.split(' ')[1], last = game.moveLog.length, atTail = viewIndex === last;
   const s = game.settings, bot = botSide(s);
   const live = analysis?.fen === fen && (analysis.ply === undefined || analysis.ply === viewIndex) ? analysis : null;
-  // The five-engine sweep covering the on-screen position (same fen+ply gate as live analysis).
+  // The engine sweep covering the on-screen position (same fen+ply gate as live analysis).
   const sweepData = analysis?.sweep;
   const sweepLive = sweepData && sweepData.fen === fen && sweepData.ply === viewIndex && sweepData.phase !== 'idle' ? sweepData : null;
   // Shared analysis pauses only while every tracked tab is hidden.
@@ -995,10 +995,9 @@ function renderTablebase(fen) {
 // Widths are half-widths in an 800-unit board. The panel repeats every suggestion as accessible text.
 const ENGINE_PALETTE = [
   { hue: '#1467c8' }, // slot 1 · Stockfish — blue
-  { hue: '#e68f00' }, // slot 2 · Berserk — amber (chessground yellow)
-  { hue: '#9333ea' }, // slot 3 · Obsidian — purple
-  { hue: '#d6218f' }, // slot 4 · PlentyChess — pink (chessground pink family)
-  { hue: '#15781b' }, // slot 5 · Viridithas — green (chessground green)
+  { hue: '#9333ea' }, // Obsidian — purple
+  { hue: '#d6218f' }, // PlentyChess — pink
+  { hue: '#15781b' }, // Leela Chess Zero — green
 ];
 const ARROWS = {
   best: { color: '#15781b', opacities: [0.6, 0.36, 0.22], widths: [12, 9, 7] },
@@ -1016,7 +1015,7 @@ function arrowPoints(from, to, width, proj) {
   return [[sx + px * width, sy + py * width], [ex + px * width, ey + py * width], [ex + px * head, ey + py * head], [x + dx, y + dy], [ex - px * head, ey - py * head], [ex - px * width, ey - py * width], [sx - px * width, sy - py * width]];
 }
 const PROJECT = (sq) => [col(sq) * 100 + 50, row(sq) * 100 + 50];
-// The five-engine overlay planner, pure so test/ui-contrast.test.js can exercise it headlessly (like BADGES):
+// The engine overlay planner, pure so test/ui-contrast.test.js can exercise it headlessly (like BADGES):
 // groups engines that agree on the same move, spaces the group perpendicular to the arrow (biased toward the
 // board centre, where the room is), and clamps the spacing so no translated point can leave the 0..800 viewBox.
 // The palette and style are passed in, keeping the block self-contained for extraction.
@@ -1313,7 +1312,7 @@ function startRetry(ply) {
 function showBest(ply) {
   activeMoment = ply; retry = null; bestShown = ply;
   // "Show best" always speaks the classic language: the rank-1 best-line arrow (theme.arrowMove), so the mode
-  // lands on Best from anywhere — its tint belongs to that ladder, not the five-engine palette.
+  // lands on Best from anywhere — its tint belongs to that ladder, not the engine comparison palette.
   if (arrowMode === 'engines') stopSweepRemote();
   setArrowMode('best');
   setView(ply);

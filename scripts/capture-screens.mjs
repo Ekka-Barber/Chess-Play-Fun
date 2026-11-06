@@ -2,8 +2,7 @@
 // CDP-over-WebSocket pattern as test/browser.cjs (Node >= 21 for the global WebSocket).
 //   node scripts/capture-screens.mjs <cdp-port>            (app expected on localhost:4655, or set PORT)
 //   node scripts/capture-screens.mjs <cdp-port> <app-port> (e.g. 4677 for a throwaway instance)
-// Shots land in assets/screens/: the ranked best-line ladder on the Analysis tab, and the five-engine
-// coach view (one coloured arrow + legend row per registry engine). The engines run for real.
+// Shots land in assets/screens/: ranked analysis and the engine comparison. The engines run for real.
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
