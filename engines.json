@@ -8,14 +8,6 @@
     "multipv": true
   },
   {
-    "id": "obsidian",
-    "name": "Obsidian 16.0",
-    "path": "engines/obsidian/Obsidian160-avx2-pext.exe",
-    "chess960": false,
-    "elo": false,
-    "multipv": true
-  },
-  {
     "id": "plentychess",
     "name": "PlentyChess 8.0.0",
     "path": "engines/plentychess/PlentyChess-8.0.0-windows-avx2.exe",
@@ -27,6 +19,22 @@
     "id": "lc0",
     "name": "Leela Chess Zero 0.32.1",
     "path": "engines/lc0/lc0.exe",
+    "chess960": true,
+    "elo": false,
+    "multipv": true
+  },
+  {
+    "id": "triumviratus",
+    "name": "Triumviratus 8.0",
+    "path": "engines/triumviratus/Triumviratus_8.0_windows_universal.exe",
+    "chess960": true,
+    "elo": false,
+    "multipv": true
+  },
+  {
+    "id": "reckless",
+    "name": "Reckless 0.9.0",
+    "path": "engines/reckless/reckless-windows-avx2.exe",
     "chess960": true,
     "elo": false,
     "multipv": true

@@ -6,12 +6,13 @@ const fs = require('node:fs');
 const rules = require('./lib/rules');
 const { Engine, SEARCH_CANCELLED, PRIORITY } = require('./lib/engine');
 const { createGovernor } = require('./lib/governor');
-const { assessMove, hint, expectedPoints } = require('./lib/tutor');
+const { assessMove, hint, expectedPoints, moveIdea } = require('./lib/tutor');
+const { openingAt, guideAt } = require('./lib/opening-guide');
 const { createArchive } = require('./lib/archive');
 const { createOnline } = require('./lib/online');
 const { createPuzzles } = require('./lib/puzzles');
 const THEMES = require('./public/themes');
-const OPENINGS = JSON.parse(fs.readFileSync(path.join(__dirname,'data','openings.json'),'utf8'));
+const OPENINGS = require('./data/openings.json');
 const PORT = process.env.PORT || 4655;
 // Engine registry: entries whose executable is missing are skipped, and a malformed or empty engines.json falls back
 // to the built-in Stockfish entry. STOCKFISH_EXE still overrides everything (spawn precedence lives in lib/engine.js).
@@ -42,7 +43,7 @@ let settings = {mode:'free',variant:'standard',humanColor:'w',engineSide:null,va
 const governor=createGovernor({mode:settings.powerMode,preempt:()=>{scheduleAnalysis(tailPly());stopSweep();}});
 const currentEngine=()=>ENGINES.find(entry=>entry.id===settings.engineId)||ENGINES[0];
 // Engines are used wherever their probed capabilities allow; Stockfish fills any gap and the UI is told why.
-// Only Stockfish has UCI_Elo (1320-2800), and Obsidian lacks UCI_Chess960.
+// Only Stockfish has UCI_Elo (1320-2800).
 function pickEngines(chosen,game=settings) {
   const calibrated=ENGINES.find(entry=>entry.id==='stockfish')||ENGINES[0];
   const notices=[];
@@ -159,11 +160,14 @@ function validateSettings(input={}) {
   return next;
 }
 function openingName(ply=tailPly()) {
-  if(is960())return null;
-  const sequence=moveLog.slice(0,ply).map(move=>move.uci).join(' ');
-  let found='';
-  for(const key of Object.keys(OPENINGS))if((sequence===key || sequence.startsWith(key+' ')) && key.length>found.length)found=key;
-  return found?OPENINGS[found]:null;
+  return is960()?null:openingAt(fens,ply);
+}
+function positionGuide(ply) {
+  const played=moveLog[ply-1];
+  const plans=is960()?null:guideAt(fens[ply])?.plans??null;
+  const leftPlan=!plans && ply>0 && !is960() && Boolean(guideAt(fens[ply-1])?.plans);
+  return {plans,leftPlan,
+    lastMove:played?`${played.san} · ${moveIdea(played,null,settings.variant)}`:null};
 }
 function isBook(ply) {
   if(is960())return false;
@@ -172,7 +176,7 @@ function isBook(ply) {
 }
 function gameInfo() {
   prunePausedTabs();
-  return {id:gameId,fens,moveLog,annotations,evalHist,reviewAll,enginePaused,survival,deep:deepProgress(),revision,settings:{...settings},engineNotices,governor:{...governor.status(),paused:analysisPaused()},analysisMs:settings.analysisMs,opening:openingName(),legalMoves:rules.legalMoves(tail(),settings.variant),computer,...rules.status(fens)};
+  return {id:gameId,fens,moveLog,annotations,evalHist,reviewAll,enginePaused,survival,deep:deepProgress(),revision,settings:{...settings},engineNotices,governor:{...governor.status(),paused:analysisPaused()},analysisMs:settings.analysisMs,opening:openingName(),guide:positionGuide(tailPly()),legalMoves:rules.legalMoves(tail(),settings.variant),computer,...rules.status(fens)};
 }
 function scoreText(cp) { return cp==null?'—':`${cp>0?'+':''}${(cp/100).toFixed(2)}`; }
 function prettyLine(fen,sans) {
@@ -186,17 +190,20 @@ function prettyLine(fen,sans) {
 function mkLine(entry,rank,fen,variant=settings.variant) {
   const white=fen.split(' ')[1]==='w';
   const cp=(entry.score.type==='mate'?(entry.score.value>0?100000:-100000):entry.score.value)*(white?1:-1);
-  const sans=[];let cursor=fen,first;
+  const sans=[];let cursor=fen,first,firstMove,reply;
   for(const uci of entry.pv.slice(0,12)) {
     try {
       const request=rules.parseUciMove(cursor,uci,variant);
       const applied=rules.apply(cursor,request,variant);
-      if(!first)first={...request,displayTo:applied.move.to};
+      if(!first){first={...request,displayTo:applied.move.to};firstMove=applied.move;}
+      else if(sans.length===1)reply=applied.move;
       sans.push(applied.move.san);cursor=applied.fen;
     }catch(_){break;}
   }
   const uci=entry.pv[0];
-  return {rank,uci,pv:entry.pv,from:first?.from || uci?.slice(0,2),to:first?.to || uci?.slice(2,4),displayTo:first?.displayTo,san:sans[0]||uci,sanLine:sans,pretty:prettyLine(fen,sans),whiteCp:cp,mate:entry.score.type==='mate',text:entry.score.type==='mate'?`${cp<0?'-':''}M${Math.abs(entry.score.value)}`:scoreText(cp),depth:entry.depth,wdl:entry.wdl};
+  const openingIdea=variant==='standard'&&guideAt(fen)?.ideas?.[uci];
+  const idea=firstMove?(openingIdea||moveIdea(firstMove,reply,variant)):null;
+  return {rank,uci,pv:entry.pv,from:first?.from || uci?.slice(0,2),to:first?.to || uci?.slice(2,4),displayTo:first?.displayTo,san:sans[0]||uci,sanLine:sans,pretty:prettyLine(fen,sans),whiteCp:cp,mate:entry.score.type==='mate',text:entry.score.type==='mate'?`${cp<0?'-':''}M${Math.abs(entry.score.value)}`:scoreText(cp),depth:entry.depth,wdl:entry.wdl,idea};
 }
 function optionsFor(ply,extra={}) {return {chess960:is960(),startFen:fens[0],moves:moveLog.slice(0,ply).map(move=>move.uci),...extra};}
 function terminalReport(ply) {
@@ -255,13 +262,14 @@ function scheduleAnalysis(ply=tailPly(),{fresh=false}={}) {
   if(!Number.isInteger(ply)||ply<0||ply>tailPly())return;
   const ticket=++analysisTicket, id=gameId, fen=fens[ply];
   if(fresh)cache.delete(ply);
-  analysis={fen,ply,phase:'thinking',depth:0,nps:0,lines:[],threats:[],opening:openingName(ply),isTail:ply===tailPly()};
+  const guide=positionGuide(ply);
+  analysis={fen,ply,phase:'thinking',depth:0,nps:0,lines:[],threats:[],opening:openingName(ply),guide,isTail:ply===tailPly()};
   engine.interrupt();
   engine.exec(async()=>{
     const stale=()=>ticket!==analysisTicket || id!==gameId;
     if(stale())return;
     const result=await searchPosition(ply,ticket);if(!result||stale())return;
-    analysis={...result};
+    analysis={...result,guide};
     const status=rules.status(fens,ply);
     if(!status.over && !status.inCheck) {
       const parts=fen.split(' ');parts[1]=parts[1]==='w'?'b':'w';parts[3]='-';

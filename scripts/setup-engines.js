@@ -3,7 +3,7 @@
 // Windows picks are AVX2+BMI2 builds (any CPU from ~2013); edit engines.json + this table for other ISAs.
 const { spawnSync } = require("node:child_process");
 const { createWriteStream, readdirSync } = require("node:fs");
-const { mkdir, mkdtemp, rename, rm, stat, unlink } = require("node:fs/promises");
+const { mkdir, mkdtemp, rename, rm, stat } = require("node:fs/promises");
 const path = require("node:path");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
@@ -12,13 +12,15 @@ const DOWNLOADS = [
   // [pinned URL, executable path, minimum bytes, zip member basename?, companion files?]
   ["https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-windows-x86-64-universal.zip",
     "stockfish/stockfish-windows-x86-64-universal.exe", 50_000_000, "stockfish-windows-x86-64-universal.exe"],
-  ["https://github.com/gab8192/Obsidian/releases/download/v16.0/Obsidian160-avx2-pext.exe",
-    "engines/obsidian/Obsidian160-avx2-pext.exe", 10_000_000],
   ["https://github.com/Yoshie2000/PlentyChess/releases/download/b-v8.0.0/PlentyChess-8.0.0-windows-avx2.exe",
     "engines/plentychess/PlentyChess-8.0.0-windows-avx2.exe", 10_000_000],
   ["https://github.com/LeelaChessZero/lc0/releases/download/v0.32.1/lc0-v0.32.1-windows-cpu-dnnl.zip",
     "engines/lc0/lc0.exe", 2_000_000, "lc0.exe",
     ["791556.pb.gz", "dnnl.dll", "mimalloc-override.dll", "mimalloc-redirect.dll"]],
+  ["https://github.com/Tors3/Triumviratus/releases/download/v8.0/Triumviratus_8.0_windows_universal.exe",
+    "engines/triumviratus/Triumviratus_8.0_windows_universal.exe", 173_041_664],
+  ["https://github.com/codedeliveryservice/Reckless/releases/download/v0.9.0/reckless-windows-avx2.exe",
+    "engines/reckless/reckless-windows-avx2.exe", 64_664_576],
 ];
 
 const mb = (bytes) => (bytes / 1e6).toFixed(1);
@@ -50,13 +52,12 @@ function findMember(root, name) {
         continue;
       }
       await mkdir(directory, { recursive: true });
-      if (!member && existing > 0) await unlink(target).catch(() => {});
       const response = await fetch(url);
       if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
       const total = +(response.headers.get("content-length") || 0);
       console.log(`get   ${label}${total ? ` (${mb(total)} MB)` : ""}`);
-      if (member) staging = await mkdtemp(`${target}.download-`);
-      const downloadPath = staging ? path.join(staging, "engine.zip") : target;
+      staging = await mkdtemp(`${target}.download-`);
+      const downloadPath = path.join(staging, member ? "engine.zip" : label);
       await pipeline(Readable.fromWeb(response.body), createWriteStream(downloadPath));
       const done = (await stat(downloadPath)).size;
       if (done < minimumBytes) throw new Error(`download truncated at ${mb(done)} MB`);
@@ -74,7 +75,7 @@ function findMember(root, name) {
           await rename(source, path.join(directory, file));
         }
         await rename(executable, target);
-      }
+      } else await rename(downloadPath, target);
       console.log(`done  ${label} (${mb((await stat(target)).size)} MB)`);
     } catch (error) {
       failures++;

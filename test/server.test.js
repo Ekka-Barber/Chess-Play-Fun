@@ -164,6 +164,43 @@ test('evaluation separates high material advantage from mate; black variations n
   assert.equal(prettyLine('8/8/8/4k3/8/8/8/4K3 b - - 0 12',['Ke6','Ke2','Kd5','Kd3']),'12… Ke6 13. Ke2 Kd5 14. Kd3');
   const line = mkLine({ score:{type:'mate',value:3},pv:['e2e4'] },1,new Chess().fen()); assert.equal(line.text,'M3');
 });
+
+test('live Analysis follows the position with opening plans, move ideas, and off-book feedback', async () => {
+  await post('new', { mode: 'free', variant: 'standard' });
+  const advance = await moves('e2e4 c7c6 d2d4 d7d5 e4e5');
+  assert.match(advance.opening, /Caro-Kann.*Advance/);
+  assert.match(advance.guide.plans.black, /Bf5.*c5/);
+  assert.match(advance.guide.lastMove, /^e5/);
+  const fen = advance.fens.at(-1);
+  const position = await fetch(`${origin}/api/analysis`).then(response => response.json());
+  assert.equal(position.fen, fen);
+  assert.deepEqual(position.guide, advance.guide);
+  const candidate = mkLine({ score: { type: 'cp', value: 15 }, pv: ['c8f5', 'g1f3'] }, 1, fen);
+  assert.match(candidate.idea, /outside the pawn chain/);
+  const flankMove = mkLine({ score: { type: 'cp', value: 12 }, pv: ['a7a6'] }, 2, fen);
+  assert.equal(flankMove.idea, 'Controls b5 with the pawn.');
+
+  const unlisted = await moves('c8f5 a2a3');
+  assert.equal(unlisted.guide.plans, null);
+  assert.equal(unlisted.guide.leftPlan, true);
+  assert.match(unlisted.guide.lastMove, /^a3/);
+  const exchange = new Chess();
+  exchange.move('e4'); exchange.move('d5');
+  const line = mkLine({ score: { type: 'cp', value: 10 }, pv: ['e4d5', 'd8d5'] }, 1, exchange.fen());
+  assert.match(line.idea, /Captures a pawn.*Qxd5 recaptures/);
+  await engine.chain;
+});
+
+test('a different move order reaches the same named opening and coaching plans', async () => {
+  await post('new', { mode: 'free', variant: 'standard' });
+  const normal = await moves('d2d4 g8f6 c2c4 e7e6 b1c3 f8b4');
+  await post('new', { mode: 'free', variant: 'standard' });
+  const transposed = await moves('c2c4 g8f6 b1c3 e7e6 d2d4 f8b4');
+  assert.equal(transposed.opening, 'Nimzo-Indian Defense');
+  assert.deepEqual(transposed.guide.plans, normal.guide.plans);
+  assert.match(transposed.guide.plans.white, /c3 knight is pinned/);
+  await engine.chain;
+});
 test('engine mode replies for Stockfish and blocks the human on its turn', async () => {
   const waitFor = async (plies) => { let game; for (let i = 0; i < 100; i++) { game = await state(); if (game.moveLog.length >= plies) break; await delay(20); } return game; };
   await post('new', { mode:'engine', humanColor:'b', strength:30 });

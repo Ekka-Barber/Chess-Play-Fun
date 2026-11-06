@@ -77,6 +77,11 @@
         <section class="engine-section">
           <div class="engine-settings"><fieldset id="speed" class="choice-field"><legend>Analysis time</legend><div class="choice-row"><label class="choice-label"><input type="radio" name="speed" value="900"><span>Fast · 0.9s</span></label><label class="choice-label"><input type="radio" name="speed" value="1600" checked><span>Balanced · 1.6s</span></label><label class="choice-label"><input type="radio" name="speed" value="3000"><span>Deep · 3s</span></label></div></fieldset><label class="online-choice"><input id="online" type="checkbox"><span><strong>Lichess lookups</strong><small>Optional cloud evaluation and exact endgames. Off by default.</small></span></label></div>
           <h3 id="opening" class="opening">Starting position</h3>
+          <dl id="positionGuide" class="position-guide hidden" aria-label="Position guide">
+            <div class="hidden"><dt>White</dt><dd id="whitePlan"></dd></div>
+            <div class="hidden"><dt>Black</dt><dd id="blackPlan"></dd></div>
+            <div class="hidden"><dt>Last move</dt><dd id="moveLesson"></dd></div>
+          </dl>
           <div class="analysis-meta"><span id="turnChip">White to move</span><span id="powerChip">Stockfish 19 · Balanced</span><span><span id="depthChip">Depth —</span><span class="meta-separator">/</span><span id="npsChip">— MN/s</span></span></div>
           <div id="lines" class="lines" role="group" aria-label="Best continuations"><p class="empty-note">Finding the best continuations…</p></div>
           <div id="engineVotes" class="engine-votes hidden"><h3>Engine votes <span>each engine's first choice · asked one at a time</span></h3><div id="engineVoteRows"></div><p id="engineVotesNote" class="muted"></p></div>

@@ -706,8 +706,8 @@ function renderPanels(force = false) {
   // The fingerprint is content identity only — line moves/scores, threats, annotations, history, view and
   // review state. Embedding the live analysis object whole (with its per-tick depth/nps) changed it on every
   // poll and defeated the gate.
-  const livePrint = live && [live.fen, live.ply, live.phase, live.terminalCp ?? null, live.error ?? null, live.opening ?? null,
-    live.lines.map((line) => [line.uci, line.text, line.pretty, line.san, line.from, line.to, line.displayTo ?? null]),
+  const livePrint = live && [live.fen, live.ply, live.phase, live.terminalCp ?? null, live.error ?? null, live.opening ?? null, live.guide,
+    live.lines.map((line) => [line.uci, line.text, line.pretty, line.san, line.from, line.to, line.displayTo ?? null, line.idea]),
     live.threats.map((line) => [line.uci, line.text, line.pretty, line.from, line.to, line.displayTo ?? null])];
   // Online answers join by content identity, like every other input, so a finished lookup rebuilds once.
   const onlineState = onlineByFen.get(fen);
@@ -735,6 +735,19 @@ function renderPanels(force = false) {
   text($('#powerChip'), `${engineName} · ${capital(s.powerMode || 'balanced')}`);
   text($('#turnChip'), `${colorName(turn)} to move`);
   text($('#opening'), live?.opening || (atTail ? game.opening : null) || (viewIndex === 0 ? 'Starting position' : 'Explore this position'));
+  const guide = retry ? null : live?.guide || (atTail ? game.guide : null);
+  const annotation = game.annotations[viewIndex - 1];
+  const assessed = annotation && !['pending', 'book', 'unrated'].includes(annotation.type);
+  const moveLesson = guide?.lastMove && (assessed ? annotation.explanation : guide.lastMove);
+  $('#positionGuide').classList.toggle('hidden', !guide?.plans && !moveLesson);
+  for (const [selector, content] of [
+    ['#whitePlan', guide?.plans?.white], ['#blackPlan', guide?.plans?.black],
+    ['#moveLesson', guide?.leftPlan && moveLesson ? `The written plan ends here. ${moveLesson}` : moveLesson],
+  ]) {
+    const row = $(selector);
+    text(row, content || '');
+    row.parentElement.classList.toggle('hidden', !content);
+  }
   // The cloud line is a stopgap above the local lines: it shows only while the local search has nothing yet
   // (not ready, no lines) — the same conditions that gate its fetch in maybeFetchOnline — and drops the
   // moment local results arrive. Like the local lines it hides for retries and while offline/paused.
@@ -750,6 +763,12 @@ function renderPanels(force = false) {
       const el = document.createElement('div');
       el.className = 'line';
       el.innerHTML = `<span class="rank">${i + 1}</span><span class="ev">${evHtml(line.text)}</span><div class="pv"><strong>${line.san}</strong><span title="${line.pretty}">${line.pretty}</span></div><button class="play" data-rank="${i}" aria-label="Play ${line.san}" title="Play ${line.san}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4 20 12 7 20Z"/></svg></button>`;
+      if (line.idea) {
+        const idea = document.createElement('p');
+        idea.className = 'line-idea';
+        idea.textContent = line.idea;
+        el.querySelector('.pv').append(idea);
+      }
       const button = el.querySelector('button');
       button.disabled = busy || mover() === null;
       button.onclick = () => chooseMove(line.from, line.to, line.uci[4]);
@@ -995,9 +1014,10 @@ function renderTablebase(fen) {
 // Widths are half-widths in an 800-unit board. The panel repeats every suggestion as accessible text.
 const ENGINE_PALETTE = [
   { hue: '#1467c8' }, // slot 1 · Stockfish — blue
-  { hue: '#9333ea' }, // Obsidian — purple
   { hue: '#d6218f' }, // PlentyChess — pink
   { hue: '#15781b' }, // Leela Chess Zero — green
+  { hue: '#e68f00' }, // Triumviratus — amber
+  { hue: '#07836d' }, // Reckless — teal
 ];
 const ARROWS = {
   best: { color: '#15781b', opacities: [0.6, 0.36, 0.22], widths: [12, 9, 7] },

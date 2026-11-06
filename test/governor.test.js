@@ -220,9 +220,9 @@ test('powerMode is strictly validated, lands in settings and retunes the governo
 test('engineId is validated against the registry; /api/engines lists the registered engines', async () => {
   const listed = await fetch(`${origin}/api/engines`).then((r) => r.json());
   assert.equal(listed.defaultId, 'stockfish');
-  // Stockfish leads the four-engine registry. CI clones
+  // Stockfish leads the registry. CI clones
   // have no binaries, so there the documented single-engine fallback lists exactly one: Stockfish itself.
-  assert.ok([1, 4].includes(listed.engines.length), `expected the full registry or Stockfish fallback, got ${listed.engines.length}`);
+  assert.ok([1, require("../engines.json").length].includes(listed.engines.length), `expected the full registry or Stockfish fallback, got ${listed.engines.length}`);
   assert.deepEqual(Object.keys(listed.engines[0]), ['id', 'name', 'chess960', 'elo', 'multipv']);
   assert.equal(listed.engines[0].id, 'stockfish');
   assert.equal(listed.engines[0].elo, true, 'only the calibrated engine leads the registry');

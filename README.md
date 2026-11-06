@@ -1,15 +1,15 @@
 # Chess Play & Fun
 
-**Compare four engines on the same board. Understand your next move.**
+**Compare five engines on the same board. Understand your next move.**
 
 A local chess workbench for Windows. Play Standard or Chess960, compare engine moves, solve puzzles, and review mistakes with explanations and retry drills. Candidate moves appear while the engines search on your computer. Optional Lichess features stay off until you enable them.
 
 [![CI](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml/badge.svg)](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml)
-![128 tests](https://img.shields.io/badge/tests-128-407548)
+![130 tests](https://img.shields.io/badge/tests-130-407548)
 ![Windows x64](https://img.shields.io/badge/platform-Windows_x64-625846)
 [![MIT license](https://img.shields.io/badge/code-MIT-625846)](LICENSE)
 
-![Current desktop workspace: a full-width evaluation chart above the original-size board, visible engine choices, compute budgets, and the Coach panel.](assets/screens/app-evaluation-desktop.png)
+![Desktop workspace with the evaluation chart, engine choices, compute budgets, and the Coach panel.](assets/screens/app-evaluation-desktop.png)
 
 [Install](#run-locally) · [Use the board](#use-the-board) · [Puzzles](#solve-puzzles) · [Engine guide](#choose-your-engine) · [Performance](#measured-performance) · [Changelog](CHANGELOG.md) · [Releases](https://github.com/Ekka-Barber/Chess-Play-Fun/releases)
 
@@ -21,7 +21,7 @@ These changes are available on `main`; the latest tagged release is [v4.0.2](htt
 - **Keep the board large.** The desktop evaluation chart spans its width without reducing the board size. It includes the current score, a ±5-pawn scale, subtle White/Black shading, and a position marker. Unanalysed positions remain gaps. Phones and short landscape screens keep the chart in Analysis.
 - **Solve and return.** Four local starter puzzles work offline, with optional Lichess daily puzzles. Squares stay equal, pieces keep their proportions, and refreshing restores this tab's puzzle and progress.
 - **Recognise a Brilliant.** Confirmed player moves receive a brief, one-shot impact and ray burst. Appearance includes a preview; reduced motion retains the static marker. No extra engine search is needed.
-- **Compare engines with Leela.** Leela Chess Zero joins Stockfish, Obsidian, and PlentyChess for local play and analysis. Start or stop a comparison from the engine panel.
+- **Compare five engines.** Triumviratus and Reckless join Stockfish, PlentyChess, and Leela Chess Zero. Start or stop a comparison from the engine panel.
 
 Verified with **128 passing tests**, plus Chromium gameplay, puzzle, refresh, and desktop/phone layout checks. [Read the changelog](CHANGELOG.md) for the complete fixes and release history.
 
@@ -87,6 +87,8 @@ Click **Compare all engines** below the engine choices to start comparison. Clic
 
 Comparison requests use a 300 ms budget per engine and search one engine at a time. Initialization can overlap. A playing engine's reply gets priority over analysis work.
 
+**Analysis** explains the last move and adds a short note to each engine line. The built-in position guide includes plans for selected Caro-Kann, Italian, Queen’s Gambit Declined, and Nimzo-Indian positions. It recognizes the same opening position across move orders. Beyond the written plans, the guide uses legal moves, the existing Coach assessment, and the selected engine's current lines.
+
 <details>
 <summary>See ranked analysis without the engine-vote overlay</summary>
 
@@ -119,16 +121,14 @@ The registry records the installed binaries' capabilities. The selected engine h
 | Engine | Chess960 | Multiple candidate lines | Elo limiter | Role in this app |
 | --- | :---: | :---: | :---: | --- |
 | [Stockfish 19](https://github.com/official-stockfish/Stockfish) | Yes | Yes | Yes | Default engine; calibrated opponents and fallback coaching. |
-| [Obsidian 16.0](https://github.com/gab8192/Obsidian) | No | Yes | No | Standard-chess play, analysis, and comparison votes. |
 | [PlentyChess 8.0.0](https://github.com/Yoshie2000/PlentyChess) | Yes | Yes | No | Standard and Chess960 play, analysis, and comparison votes. |
 | [Leela Chess Zero 0.32.1](https://github.com/LeelaChessZero/lc0/releases/tag/v0.32.1) | Yes | Yes | No | Full-strength play, analysis, and comparison votes in Standard and Chess960. |
+| [Triumviratus 8.0](https://github.com/Tors3/Triumviratus/releases/tag/v8.0) | Yes | Yes | No | Full-strength play, analysis, and comparison votes in Standard and Chess960. |
+| [Reckless 0.9.0](https://github.com/codedeliveryservice/Reckless/releases/tag/v0.9.0) | Yes | Yes | No | Full-strength play, analysis, and comparison votes in Standard and Chess960. |
 
-**Fallbacks to expect:**
+At 10–90% strength, Stockfish plays if the chosen engine has no Elo limiter.
 
-- At 10-90% strength, Stockfish plays if the chosen engine has no Elo limiter.
-- In Chess960, Stockfish handles Obsidian's playing and analysis roles. Comparison mode marks Obsidian as unsupported rather than inventing an Obsidian vote.
-
-Pinned release tags are `sf_19`, `v16.0`, `b-v8.0.0`, and `v0.32.1`. Download sources are in [the setup script](scripts/setup-engines.js). Paths and capability flags live in [engines.json](engines.json).
+Download versions are pinned in [the setup script](scripts/setup-engines.js). Paths and capability flags live in [engines.json](engines.json).
 
 ## Measured performance
 

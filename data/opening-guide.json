@@ -1,0 +1,63 @@
+{
+  "e2e4 c7c6": {
+    "white": "Build a pawn center with d4. You can advance, exchange, or keep the tension when Black plays ...d5.",
+    "black": "Prepare ...d5 with the c-pawn. Keep the c8 bishop free to develop before ...e6.",
+    "ideas": { "d2d4": "Builds a two-pawn center before Black challenges e4." }
+  },
+  "e2e4 c7c6 d2d4 d7d5": {
+    "white": "Choose the pawn structure. e5 gains space, exd5 opens lines, and Nc3 develops while keeping the tension.",
+    "black": "White’s decision on e4 tells you where to put the c8 bishop and how to challenge the center.",
+    "ideas": { "e4e5": "Gains kingside space and drives the game toward a closed center.", "e4d5": "Trades the e-pawn and invites ...cxd5.", "b1c3": "Develops the knight and gives e4 more support." }
+  },
+  "e2e4 c7c6 d2d4 d7d5 e4e5": {
+    "white": "The e5 pawn gives you space. Develop behind the pawn chain and keep an eye on its base at d4.",
+    "black": "Develop the c8 bishop with ...Bf5 before ...e6. A later ...c5 challenges d4.",
+    "ideas": { "c8f5": "Gets the light-squared bishop outside the pawn chain before ...e6.", "c6c5": "Challenges d4 immediately with the c-pawn." }
+  },
+  "e2e4 c7c6 d2d4 d7d5 e4e5 c8f5": {
+    "white": "Develop with Nf3 to support d4, or use another setup that keeps the center intact.",
+    "black": "Your light-squared bishop is out. Support d5 with ...e6 and look for a chance to play ...c5.",
+    "ideas": { "g1f3": "Develops the knight and adds a defender to d4.", "h2h4": "Gains space on the kingside and threatens to chase the f5 bishop with g4." }
+  },
+  "e2e4 c7c6 d2d4 d7d5 e4d5 c6d5": {
+    "white": "Bd3 aims at h7. Develop the knight and castle before looking for a kingside attack.",
+    "black": "Develop around the half-open c-file. Consider bringing out the c8 bishop before ...e6.",
+    "ideas": { "f1d3": "Develops with the bishop already looking toward h7." }
+  },
+  "e2e4 e7e5 g1f3 b8c6 f1c4": {
+    "white": "Your bishop points at f7. Castle and prepare a central break with c3 and d4 if Black gives you time.",
+    "black": "Match White’s development. ...Bc5 eyes f2, while ...Nf6 attacks e4 and invites sharper play.",
+    "ideas": { "f8c5": "Develops the bishop with pressure on f2.", "g8f6": "Attacks e4 and starts the Two Knights Defense." }
+  },
+  "e2e4 e7e5 g1f3 b8c6 f1c4 f8c5": {
+    "white": "Prepare d4 with c3, or choose a slower setup with d3 and castling.",
+    "black": "Develop ...Nf6 and castle. If White prepares d4, pay attention to the tension around e5.",
+    "ideas": { "c2c3": "Supports a later d4 break and clears c2 for the bishop to retreat through b3.", "d2d3": "Protects e4 and frees the c1 bishop while keeping the center flexible.", "b2b4": "Offers a pawn to gain time for c3 and d4 in the Evans Gambit." }
+  },
+  "e2e4 e7e5 g1f3 b8c6 f1c4 g8f6": {
+    "white": "d3 protects e4 and keeps the game quiet. Ng5 doubles the attack on f7 and invites a sharp central reply.",
+    "black": "The knight attacks e4. Against Ng5, challenge the center with ...d5.",
+    "ideas": { "d2d3": "Supports e4 and opens a diagonal for the c1 bishop.", "f3g5": "Adds the knight to the bishop’s attack on f7." }
+  },
+  "d2d4 d7d5 c2c4 e7e6": {
+    "white": "Put pressure on d5 with Nc3. Exchanging on d5 is another way to define the pawn structure.",
+    "black": "Keep the d5 pawn supported, develop ...Nf6 and ...Be7, then look for a way to free the c8 bishop.",
+    "ideas": { "b1c3": "Develops the knight and increases pressure on d5.", "c4d5": "Forces Black to decide how to restore the d5 pawn." }
+  },
+  "d2d4 d7d5 c2c4 e7e6 c4d5 e6d5": {
+    "name": "Queen’s Gambit Declined: Exchange Variation",
+    "white": "Develop first. A later b4–b5 can create a target in Black’s queenside pawns.",
+    "black": "Develop toward e4 and consider a central break or active piece play before White advances on the queenside.",
+    "ideas": { "b1c3": "Develops the knight toward the central d5 and e4 squares." }
+  },
+  "d2d4 d7d5 c2c4 e7e6 b1c3 g8f6": {
+    "white": "Bg5 pins the knight to the queen. Develop the kingside and castle before opening the center.",
+    "black": "Prepare to castle with ...Be7. Leave the d5 tension in place until a trade or a break helps development.",
+    "ideas": { "c1g5": "Pins the f6 knight to Black’s queen.", "c4d5": "Changes the central pawn structure before developing the bishop." }
+  },
+  "d2d4 g8f6 c2c4 e7e6 b1c3 f8b4": {
+    "white": "The c3 knight is pinned to your king. e3 develops toward castling, while Qc2 prepares to recapture on c3 with the queen.",
+    "black": "Use the pin to control e4. Decide whether to keep the bishop or trade it for structural changes on the c-file.",
+    "ideas": { "e2e3": "Supports d4 and opens the f1 bishop’s diagonal.", "d1c2": "Supports c3 so the queen can recapture if Black trades there." }
+  }
+}

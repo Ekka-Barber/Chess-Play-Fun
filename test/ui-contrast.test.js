@@ -213,9 +213,9 @@ test("ENGINE_ARROWS spreads agreeing engines and never clips a fat arrowhead off
   const { plan } = new Function(`${geometry}\n${planner}; return ENGINE_ARROWS;`)();
   const FILES = "abcdefgh";
   const proj = (sq) => [FILES.indexOf(sq[0]) * 100 + 50, (8 - +sq[1]) * 100 + 50];
-  const palette = [{ hue: "#111111" }, { hue: "#222222" }, { hue: "#333333" }, { hue: "#444444" }, { hue: "#555555" }];
+  const palette = arrowConsts.ENGINE_PALETTE;
   const style = arrowConsts.ARROWS.engine;
-  const votes = (from, to) => [1, 2, 3, 4, 5].map((slot) => ({ engineId: `e${slot}`, name: `E${slot}`, from, to, uci: from + to }));
+  const votes = (from, to) => palette.map((_, slot) => ({ engineId: `e${slot + 1}`, name: `E${slot + 1}`, from, to, uci: from + to }));
   const inBounds = (polygons) => {
     assert.ok(polygons.length > 0, "planner returned no arrows");
     for (const { points } of polygons) {
@@ -225,10 +225,10 @@ test("ENGINE_ARROWS spreads agreeing engines and never clips a fat arrowhead off
       }
     }
   };
-  // Five-way agreement on the worst cases: both board-edge files and a long diagonal.
+  // Full agreement on both board-edge files and a long diagonal.
   for (const [from, to] of [["a2", "a4"], ["h2", "h4"], ["a1", "h8"], ["e2", "e4"]]) {
     const polygons = plan(votes(from, to), proj, palette, style);
-    assert.equal(polygons.length, 5, `${from}${to}: one arrow per agreeing engine`);
+    assert.equal(polygons.length, palette.length, `${from}${to}: one arrow per agreeing engine`);
     inBounds(polygons);
     // Even at the board edge, agreeing votes keep distinct lanes.
     for (let i = 0; i < polygons.length; i++) {
@@ -251,7 +251,7 @@ test("ENGINE_ARROWS spreads agreeing engines and never clips a fat arrowhead off
   assert.equal(plan([{ engineId: "x", name: "X", skipped: "chess960" }, { engineId: "y", name: "Y", error: "boom" }], proj, palette, style).length, 0);
   const stationaryCastle = votes('g1', 'h1').map(r => ({ ...r, displayTo: 'g1' }));
   const castleArrows = plan(stationaryCastle, proj, palette, style);
-  assert.equal(castleArrows.length, 5, 'stationary-king Chess960 castling points toward the rook');
+  assert.equal(castleArrows.length, palette.length, 'stationary-king Chess960 castling points toward the rook');
   inBounds(castleArrows);
 });
 
