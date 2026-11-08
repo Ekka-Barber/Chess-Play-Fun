@@ -1,12 +1,12 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { Chess: StandardChess } = require("chess.js");
 const path = require("node:path");
 const chessops = (name) => require(path.join(path.dirname(require.resolve("chessops")), "..", "esm", name + ".js"));
 const { parsePgn, startingPosition } = chessops("pgn");
 const { parseSan } = chessops("san");
 const { makeFen } = chessops("fen");
 const rules = require("../lib/rules");
+const standardLine = require("./fixtures/standard-line.json");
 
 function play(sequence, fen = rules.startFen(), variant = "standard") {
   const fens = [fen], moves = [];
@@ -49,19 +49,26 @@ test("board and metadata preserve FEN letter conventions", () => {
   assert.equal(rules.NAMES.n, "Knight");
 });
 
-test("ordinary play and legal destinations agree with standard chess", () => {
-  let fen = rules.startFen(), standard = new StandardChess();
-  for (const uci of "e2e4 c7c5 g1f3 d7d6 d2d4 c5d4 f3d4 g8f6 b1c3 a7a6".split(" ")) {
+test("ordinary play matches fixed independent SAN, FEN, and legal-move fixtures", () => {
+  // Frozen from chess.js 1.4.0 before removing the duplicate engine; expected values never come from rules.
+  let fen = rules.startFen();
+  for (const [uci, san, afterFen, legal] of standardLine) {
     const actual = rules.legalMoves(fen).map((move) => move.uci).sort();
-    const expected = standard.moves({ verbose: true }).map((move) => move.from + move.to + (move.promotion || "")).sort();
-    assert.deepEqual(actual, expected);
+    assert.deepEqual(actual, legal.split(" "));
     const result = rules.apply(fen, rules.parseUciMove(fen, uci));
-    const move = standard.move({ from: uci.slice(0, 2), to: uci.slice(2, 4) });
-    assert.equal(result.move.san, move.san);
-    assert.equal(result.fen, standard.fen());
+    assert.equal(result.move.san, san);
+    assert.equal(result.fen, afterFen);
     fen = result.fen;
   }
   assert.equal(rules.allMoves(rules.load(rules.startFen())).length, 20);
+});
+
+test("legal move replay matches fixed start and Kiwipete perft totals", () => {
+  // Independently verified with the bundled Stockfish 19 `go perft 2` command.
+  const perft = (fen, depth) => depth === 0 ? 1 : rules.legalMoves(fen).reduce((nodes, move) =>
+    nodes + perft(rules.apply(fen, move).fen, depth - 1), 0);
+  assert.equal(perft(rules.startFen(), 2), 400);
+  assert.equal(perft("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", 2), 2039);
 });
 
 test("standard castling exposes c/g destinations and canonical standard UCI", () => {

@@ -1,6 +1,6 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { Chess } = require('chess.js');
+const rules = require('../lib/rules');
 const { request } = require('node:http');
 const { app, engine, playingEngine, reviewEngine, archive, timing, prettyLine, scoreText, mkLine } = require('../server');
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -8,8 +8,8 @@ let server, origin;
 // Deterministic UCI boundary; browser verification uses the real executable.
 engine.start = async () => {};
 engine.go = async (fen) => {
-  const c = new Chess(fen), move = c.moves({ verbose: true })[0];
-  return { lines: move ? [{ score: { type: 'cp', value: 25 }, pv: [move.from + move.to + (move.promotion || '')] }] : [], depth: 12, nps: 100000, best: move?.lan };
+  const move = rules.legalMoves(fen)[0];
+  return { lines: move ? [{ score: { type: 'cp', value: 25 }, pv: [move.uci] }] : [], depth: 12, nps: 100000, best: move?.uci };
 };
 reviewEngine.start = engine.start;
 reviewEngine.go = (...args) => engine.go(...args);
@@ -122,14 +122,14 @@ test('retry results are rejected when an undo changes the position during judgin
 });
 test('castling and en passant preserve the complete legal position', async () => {
   await post('new'); let result = await moves('e2e4 e7e5 g1f3 b8c6 f1c4 g8f6 e1g1');
-  let c = new Chess(result.fens.at(-1)); assert.equal(c.get('g1').type,'k'); assert.equal(c.get('f1').type,'r'); assert.equal(result.moveLog.at(-1).san,'O-O');
+  assert.equal(result.fens.at(-1),'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 5 4'); assert.equal(result.moveLog.at(-1).san,'O-O');
   await post('new'); result = await moves('e2e4 a7a6 e4e5 d7d5 e5d6');
-  c = new Chess(result.fens.at(-1)); assert.equal(c.get('d5'),undefined); assert.equal(c.get('d6').color,'w');
+  assert.equal(result.fens.at(-1),'rnbqkbnr/1pp1pppp/p2P4/8/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 3');
 });
 test('legal underpromotion retains promotion in history and UCI', async () => {
   await post('new'); let result = await moves('a2a4 h7h5 a4a5 h5h4 a5a6 h4h3 a6b7 h3g2 b7a8n');
   assert.equal(result.moveLog.at(-1).uci,'b7a8n'); assert.equal(result.moveLog.at(-1).promotion,'n');
-  assert.equal(new Chess(result.fens.at(-1)).get('a8').type,'n');
+  assert.equal(result.fens.at(-1),'Nnbqkbnr/p1ppppp1/8/8/8/8/1PPPPPpP/RNBQKBNR b KQk - 0 5');
   const before = result.fens;
   await post('move',{from:'b2',to:'b8',promotion:'k'},400);
   assert.deepEqual((await state()).fens,before);
@@ -153,7 +153,7 @@ test('threefold repetition and checkmate are reported from game history', async 
 test('history navigation and settings reject invalid input', async () => {
   const original = await post('new');
   await post('analyze',{fen:'anything'},400);
-  await post('analyze',{fen:new Chess('8/8/8/4k3/8/8/8/4K3 w - - 0 1').fen()},400);
+  await post('analyze',{fen:'8/8/8/4k3/8/8/8/4K3 w - - 0 1'},400);
   await post('analyze',{fen:original.fens[0]});
   for (const atPly of [-1,Infinity,'0',100]) await post('undo',{atPly},400);
   await post('settings',{analysisMs:'900'},400); await post('settings',{analysisMs:900});
@@ -162,7 +162,7 @@ test('history navigation and settings reject invalid input', async () => {
 test('evaluation separates high material advantage from mate; black variations number correctly', () => {
   assert.equal(scoreText(1200),'+12.00');
   assert.equal(prettyLine('8/8/8/4k3/8/8/8/4K3 b - - 0 12',['Ke6','Ke2','Kd5','Kd3']),'12… Ke6 13. Ke2 Kd5 14. Kd3');
-  const line = mkLine({ score:{type:'mate',value:3},pv:['e2e4'] },1,new Chess().fen()); assert.equal(line.text,'M3');
+  const line = mkLine({ score:{type:'mate',value:3},pv:['e2e4'] },1,rules.startFen()); assert.equal(line.text,'M3');
 });
 
 test('live Analysis follows the position with opening plans, move ideas, and off-book feedback', async () => {
@@ -184,9 +184,8 @@ test('live Analysis follows the position with opening plans, move ideas, and off
   assert.equal(unlisted.guide.plans, null);
   assert.equal(unlisted.guide.leftPlan, true);
   assert.match(unlisted.guide.lastMove, /^a3/);
-  const exchange = new Chess();
-  exchange.move('e4'); exchange.move('d5');
-  const line = mkLine({ score: { type: 'cp', value: 10 }, pv: ['e4d5', 'd8d5'] }, 1, exchange.fen());
+  const exchange = 'rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2';
+  const line = mkLine({ score: { type: 'cp', value: 10 }, pv: ['e4d5', 'd8d5'] }, 1, exchange);
   assert.match(line.idea, /Captures a pawn.*Qxd5 recaptures/);
   await engine.chain;
 });
@@ -239,7 +238,7 @@ test('free-play Stockfish: best move by default; Random top-5 picks randomly, pl
     assert.ok(Number.isInteger(five) && five >= 0 && five <= 4); assert.ok(two >= 0 && two <= 1);
   }
   const go = playingEngine.go, pick = timing.pick, thinkTime = timing.thinkTime;
-  const legal = (fen) => new Chess(fen).moves({ verbose:true }).slice(0, 5).map((m) => m.from + m.to + (m.promotion || ''));
+  const legal = (fen) => rules.legalMoves(fen).slice(0, 5).map((move) => move.uci);
   const cp = (value) => ({ type:'cp', value }), mate = (value) => ({ type:'mate', value }), calls = [];
   let scores;
   // Scores are from Stockfish's side, best first, as Stockfish reports them.
@@ -253,7 +252,7 @@ test('free-play Stockfish: best move by default; Random top-5 picks randomly, pl
   const engineMove = async (n) => { let game; for (let i = 0; i < 100 && (game = await state()).moveLog.length < n; i++) await delay(20); return game; };
   const opening = (variety, lineScores) => { scores = lineScores; return post('new', { mode:'free', engineSide:'w', variety }).then(() => engineMove(1)); };
   const reply = async (n) => { const game = await state(); await post('move', { from:game.legalMoves[0].from, to:game.legalMoves[0].to }); return engineMove(n); };
-  const start = legal(new Chess().fen());
+  const start = legal(rules.startFen());
   const level = [cp(30), cp(25), cp(20), cp(15), cp(10)];
   try {
     let game = await opening(false, level);
@@ -338,6 +337,8 @@ test('deep review searches every position at depth 20 on its own engine and re-g
     assert.equal(game.deep.active,false); assert.equal(game.deep.done,game.deep.total); assert.equal(game.deep.total,5);
     for (const fen of game.fens) assert.ok(calls.some((call) => call.fen === fen && call.depth === 20), fen);
     assert.ok(game.annotations.every((note) => note.type !== 'pending'));
+    assert.equal(game.annotations[0].rule,'local-v2', 'opening theory is also assessed for a sound sacrifice');
+    assert.equal(game.annotations[0].depth,12, 'report the achieved depth from the engine stub, not the requested target');
     assert.ok(game.evalHist.every(Number.isFinite));
   } finally { reviewEngine.go = go; }
 });

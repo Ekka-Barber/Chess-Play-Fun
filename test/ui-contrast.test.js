@@ -136,6 +136,20 @@ test("every move-quality badge glyph keeps >=3:1 against its disc", () => {
   }
 });
 
+test('colored assessment text stays readable on normal and selected surfaces in every theme', () => {
+  for (const selector of ['.review-badge', '.review-table th', '.moment-label']) {
+    const color = cssProp(cssRule(selector), 'color');
+    const mix = Number(color.match(/\)\s+(\d+)%/)?.[1]) / 100;
+    assert.ok(Number.isFinite(mix), `Missing assessment text blend: ${selector}`);
+    for (const [name, theme] of Object.entries(themes)) for (const [type, badge] of Object.entries(badges)) {
+      const ink = composite(badge.color, mix, theme.text);
+      for (const surface of [theme.surface, theme.raised]) {
+        assert.ok(contrast(ink, channels(surface)) >= 4.5, `${selector}, ${name}, ${type}: assessment text needs 4.5:1`);
+      }
+    }
+  }
+});
+
 test("brilliant-count badge text keeps >=4.5:1 and shares the brilliant disc colour", () => {
   const rule = cssRule("#collectionCount:not(:empty)");
   const background = cssProp(rule, "background"), color = cssProp(rule, "color");

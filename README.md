@@ -5,7 +5,7 @@
 A local chess workbench for Windows. Play Standard or Chess960, compare engine moves, solve puzzles, and review mistakes with explanations and retry drills. Candidate moves appear while the engines search on your computer. Optional Lichess features stay off until you enable them.
 
 [![CI](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml/badge.svg)](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml)
-![130 tests](https://img.shields.io/badge/tests-130-407548)
+![158 tests](https://img.shields.io/badge/tests-158-407548)
 ![Windows x64](https://img.shields.io/badge/platform-Windows_x64-625846)
 [![MIT license](https://img.shields.io/badge/code-MIT-625846)](LICENSE)
 
@@ -15,15 +15,13 @@ A local chess workbench for Windows. Play Standard or Chess960, compare engine m
 
 ## Latest changes
 
-These changes are available on `main`; the latest tagged release is [v4.0.2](https://github.com/Ekka-Barber/Chess-Play-Fun/releases/tag/v4.0.2).
+The latest tagged release is [v4.0.2](https://github.com/Ekka-Barber/Chess-Play-Fun/releases/tag/v4.0.2). This branch adds:
 
-- **Choose directly.** All ten configuration dropdowns have been replaced with visible choices. Select engines and compute budgets beside the board; open Appearance for six board themes and five piece sets.
-- **Keep the board large.** The desktop evaluation chart spans its width without reducing the board size. It includes the current score, a ±5-pawn scale, subtle White/Black shading, and a position marker. Unanalysed positions remain gaps. Phones and short landscape screens keep the chart in Analysis.
-- **Solve and return.** Four local starter puzzles work offline, with optional Lichess daily puzzles. Squares stay equal, pieces keep their proportions, and refreshing restores this tab's puzzle and progress.
-- **Recognise a Brilliant.** Confirmed player moves receive a brief, one-shot impact and ray burst. Appearance includes a preview; reduced motion retains the static marker. No extra engine search is needed.
-- **Compare five engines.** Triumviratus and Reckless join Stockfish, PlentyChess, and Leela Chess Zero. Start or stop a comparison from the engine panel.
+- **Smarter Brilliant review.** Better sacrifice detection, deeper confirmation, and clearer explanations.
+- **Study and celebrate.** Explore replies and sacrifice acceptance on a separate board, with a new teal celebration and reduced-motion support. Saved moves retain their study lines.
+- **Lighter installation.** Removed the duplicate chess.js dependency, reducing installed file size by 8.47%.
 
-Verified with **128 passing tests**, plus Chromium gameplay, puzzle, refresh, and desktop/phone layout checks. [Read the changelog](CHANGELOG.md) for the complete fixes and release history.
+Verified with **158 passing tests**, the build gate, and desktop/mobile browser checks. Details: [Brilliant review](design-plans/brilliant-review.md) · [Dependency audit](design-plans/dependency-audit.md).
 
 ## Run locally
 
@@ -104,13 +102,15 @@ Open **Review** for side-by-side accuracy, the winning-chances graph, and key mo
 
 **Deep review** uses a separate engine process with a depth-20 target and a 20-second cap per position. You can browse the board while it runs. Move labels use this app's own grading heuristics and can change as analysis deepens.
 
+Brilliant recognizes sound, voluntary piece sacrifices and requests deeper confirmation when needed. Leela candidates receive independent Stockfish confirmation. **If they take**, **Explore the reply**, and **Compare** open a separate study board without changing your game. These are local assessments, so labels can differ from other apps.
+
 ### Keep your Brilliant moves
 
 A verified player sacrifice classified as Brilliant is automatically saved under `Brilliant Moves/` with:
 
 - A 1024 × 1240 board image.
 - The game PGN.
-- Metadata, the explanation, and the position before the move.
+- Metadata, the explanation, engine attribution, legal study lines, and the position before the move.
 
 Open **Brilliants** to download an image or PGN, or use **Study** to restore the saved game. Engine moves are not collected as the player's finds.
 
@@ -189,7 +189,7 @@ Use drag and drop, click a piece then its destination, or navigate by keyboard. 
 
 Configuration uses visible choices throughout. **Appearance** offers six board themes and five piece sets: Cburnett, Merida, Chessnut, Fantasy, and RhosGFX. Both choices are remembered in your browser. Board squares have labels and visible focus states, and the interface supports reduced motion and phone layouts.
 
-A confirmed player Brilliant gets a brief badge impact and ray burst, once per move while this page is open. The effect does not request more engine analysis. **Appearance → Preview brilliant** demonstrates it; reduced-motion preferences retain the static marker.
+A confirmed player Brilliant gets a brief piece landing and teal board wave. Use **Replay celebration** to repeat it or **Appearance → Preview brilliant** to preview the badge. Reduced motion retains the static marker.
 
 ### Solve puzzles
 
@@ -216,9 +216,12 @@ Vanilla JavaScript, Express, [chessops](https://github.com/niklasf/chessops), an
 ```powershell
 npm ci
 npm test
+npm run build
 ```
 
-The local audit passed **128 tests**. Tests stub the engine boundary and run without downloading the binaries; the alternate-engine switch case skips when no second engine is installed. [GitHub Actions](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml) runs the suite on Node 20 and 22. The Chromium harness also accepts a debugging port and an explicit disposable app URL: `node test/browser.cjs <debug-port> http://127.0.0.1:4660/`. It replaces that server's game while testing.
+The local audit passed **158 tests**. The build gate checks JavaScript syntax and local page assets; source is still served directly. Tests stub the engine boundary and run without downloading the binaries; the alternate-engine switch case skips when no second engine is installed. Frozen real-engine snapshots also cover direct, indirect, voluntary, and unsound sacrifices. [GitHub Actions](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml) runs the suite on Node 20 and 22. The Chromium harness also accepts a debugging port and an explicit disposable app URL: `node test/browser.cjs <debug-port> http://127.0.0.1:4660/`. It replaces that server's game while testing.
+
+Production dependencies remain chessops, Express, and resvg. See the [dependency audit](design-plans/dependency-audit.md) for the cleanup and size measurements.
 
 Coverage includes legal moves and Chess960 castling, stale requests, engine fallback and switching, progressive analysis, exclusive search scheduling, tab visibility, clocks, move grading, retry judging, archive writes, online opt-in, legal puzzle lines and daily-puzzle validation, evaluation-chart gaps and retry privacy, arrow geometry, and contrast rules.
 

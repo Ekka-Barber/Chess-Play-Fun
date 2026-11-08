@@ -1,6 +1,6 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { Chess } = require('chess.js');
+const rules = require('../lib/rules');
 const { Engine, SEARCH_CANCELLED } = require('../lib/engine');
 const { createGovernor } = require('../lib/governor');
 const { app, engine, playingEngine, reviewEngine } = require('../server');
@@ -10,8 +10,8 @@ let server, origin;
 // 103 MB binary can never launch from this suite.
 engine.start = async () => {};
 engine.go = async (fen) => {
-  const c = new Chess(fen), move = c.moves({ verbose: true })[0];
-  return { lines: move ? [{ score: { type: 'cp', value: 25 }, pv: [move.from + move.to + (move.promotion || '')] }] : [], depth: 12, nps: 100000, best: move?.lan };
+  const move = rules.legalMoves(fen)[0];
+  return { lines: move ? [{ score: { type: 'cp', value: 25 }, pv: [move.uci] }] : [], depth: 12, nps: 100000, best: move?.uci };
 };
 reviewEngine.start = engine.start;
 reviewEngine.go = (...args) => engine.go(...args);
@@ -30,7 +30,7 @@ const state = () => fetch(`${origin}/api/state`).then((r) => r.json());
 const analysisOf = () => fetch(`${origin}/api/analysis`).then((r) => r.json());
 async function moves(sequence) { let result; for (const uci of sequence.split(' ')) result = await post('move', { from: uci.slice(0,2), to: uci.slice(2,4), ...(uci[4] ? { promotion: uci[4] } : {}) }); return result; }
 async function waitFor(check, attempts = 150) { let last; for (let i = 0; i < attempts; i++) { last = await check(); if (last) return last; await delay(20); } return last; }
-const startFen = () => new Chess().fen();
+const startFen = () => rules.startFen();
 
 // Just enough UCI for the REAL Engine.go() to run end to end without a process: every write is recorded and each
 // command is answered through the engine's own stdout→feed wiring (installed by the stubbed start below, mirroring

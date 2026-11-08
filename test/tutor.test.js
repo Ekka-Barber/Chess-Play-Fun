@@ -27,7 +27,7 @@ test("expected-points loss uses all five ordinary grading bands", () => {
     assert.equal(result.type, type);
     assert.ok(Math.abs(result.lossPoints - loss) < 1e-12);
     assert.equal(result.betterSan, "d4");
-    assert.equal(result.rule, "local-v1");
+    assert.equal(result.rule, "local-v2");
   }
 });
 
@@ -104,7 +104,7 @@ test("Brilliant recognizes a newly offered bishop with a verified material conce
   assert.ok(result.sacrifice.materialCost >= 2);
   const after = rules.apply(gift, rules.parseUciMove(gift, "d3h7")).fen;
   assert.doesNotThrow(() => rules.parseUciMove(after, result.sacrifice.captureUci));
-  assert.match(result.explanation, /conservative local sacrifice estimate/);
+  assert.ok(result.explanation.includes(`If Black accepts with ${result.sacrifice.captureSan}`));
 });
 
 test("Brilliant can recognize an unmoved queen exposed by moving a blocker", () => {
@@ -158,4 +158,62 @@ test("assessment is deterministic, does not mutate input, and rejects mismatched
   assert.deepEqual(assessMove(input), first);
   assert.equal(JSON.stringify(input), original);
   assert.throws(() => assessMove({ ...input, afterFen: gift }), /does not match/);
+});
+
+test("Brilliant accepts voluntary exchange sacrifices for either color", () => {
+  for (const [fen, uci, reply] of [
+    ["6k1/8/8/8/1p6/2bR4/8/6K1 w - - 0 1", "d3c3", "b4c3"],
+    ["6k1/8/2Br4/1P6/8/8/8/6K1 b - - 0 1", "d6c6", "b5c6"],
+  ]) {
+    const result = review(fen, uci, { reply });
+    assert.equal(result.type, "brilliant");
+    assert.equal(result.sacrifice.materialCost, 2);
+  }
+});
+
+test("an equal exchange available before the move does not make a defended piece already hanging", () => {
+  const fen = "6k1/7p/8/4n3/8/3B4/8/3R2K1 w - - 0 1";
+  const result = review(fen, "d3h7", { reply: "g8h7" });
+  assert.equal(result.type, "brilliant");
+  assert.equal(result.sacrifice.piece, "b");
+});
+
+test("sacrifice material considers a recapture that would itself lose the queen", () => {
+  const fen = "3r2k1/8/4p3/3p4/8/8/3R4/3Q2K1 w - - 0 1";
+  const result = review(fen, "d2d5", { reply: "d8d5" });
+  assert.equal(result.type, "brilliant");
+  assert.equal(result.sacrifice.materialCost, 4);
+});
+
+test("a winning sacrifice is assessed against alternatives instead of its own winning evaluation", () => {
+  const options = { beforeCp: 100000, afterCp: 100000, reply: "g8h7", alternatives: [{ uci: "c1e3", whiteCp: 0 }] };
+  assert.equal(review(gift, "d3h7", options).type, "brilliant");
+  assert.notEqual(review(gift, "d3h7", { ...options, alternatives: [{ uci: "c1e3", whiteCp: 600 }] }).type, "brilliant");
+  assert.notEqual(review(gift, "d3h7", { ...options, alternatives: [{ uci: "c1e8", whiteCp: 0 }] }).type, "brilliant");
+  const shallow = review(gift, "d3h7", { ...options, depth: 13 });
+  assert.notEqual(shallow.type, "brilliant");
+  assert.equal(shallow.needsDepth, 14);
+});
+
+test("a confirmed sacrifice can be Brilliant even when it is opening theory", () => {
+  assert.equal(review(gift, "d3h7", { book: true, reply: "g8h7" }).type, "brilliant");
+});
+
+test("a sacrifice underestimated by shallow analysis requests confirmation before rejecting it", () => {
+  const options = { best: "c1e3", beforeCp: 30, afterCp: -200, reply: "g8h7" };
+  const shallow = review(gift, "d3h7", { ...options, depth: 12 });
+  assert.equal(shallow.needsDepth, 14);
+  assert.notEqual(shallow.type, "brilliant");
+  const confirmed = review(gift, "d3h7", options);
+  assert.equal(confirmed.needsDepth, undefined);
+  assert.notEqual(confirmed.type, "brilliant");
+});
+
+test("a winning Chess960 stationary-king castle is a valid non-sacrificing alternative", () => {
+  const fen = "6k1/8/8/8/1p6/2bR4/8/6KR w H - 0 1", variant = "chess960";
+  const played = rules.apply(fen, { from: "d3", to: "c3" }, variant);
+  const result = assessMove({ beforeFen: fen, afterFen: played.fen, move: played.move, variant,
+    pre: { depth: 16, lines: [{ uci: "d3c3", whiteCp: 500 }, { uci: "g1h1", whiteCp: 500 }] },
+    post: { depth: 16, lines: [{ uci: "b4c3", whiteCp: 500 }] } });
+  assert.notEqual(result.type, "brilliant");
 });

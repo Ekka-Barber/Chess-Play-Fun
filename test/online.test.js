@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
-const { Chess } = require('chess.js');
+const rules = require('../lib/rules');
 const { randomUUID } = require('node:crypto');
 const { createOnline, OnlineError, CLOUD_TTL_MS } = require('../lib/online');
 
@@ -20,8 +20,8 @@ globalThis.fetch = realFetch; // only the online layer keeps the spy; the test's
 // Deterministic UCI boundary, as in server.test.js: no real engine is ever spawned here.
 engine.start = async () => {};
 engine.go = async (fen) => {
-  const c = new Chess(fen), move = c.moves({ verbose: true })[0];
-  return { lines: move ? [{ score: { type: 'cp', value: 25 }, pv: [move.from + move.to + (move.promotion || '')] }] : [], depth: 12, nps: 100000, best: move?.lan };
+  const move = rules.legalMoves(fen)[0];
+  return { lines: move ? [{ score: { type: 'cp', value: 25 }, pv: [move.uci] }] : [], depth: 12, nps: 100000, best: move?.uci };
 };
 reviewEngine.start = engine.start;
 reviewEngine.go = (...args) => engine.go(...args);
@@ -74,7 +74,7 @@ test('online lookups accept only positions of the current game, and >7-piece tab
   fetchLog.length = 0;
   await post('settings', { onlineFeatures: true });
   const game = await post('new');
-  const foreign = new Chess('8/8/8/4k3/8/8/8/4K3 w - - 0 1').fen();
+  const foreign = '8/8/8/4k3/8/8/8/4K3 w - - 0 1';
   for (const route of ['online/tablebase', 'online/cloud-eval']) {
     assert.equal((await post(route, { fen: foreign }, 400)).code, 'BAD_POSITION');
     await post(route, {}, 400);
@@ -89,7 +89,7 @@ test('online lookups accept only positions of the current game, and >7-piece tab
 
 test('an allowed cloud-eval answers with White-POV eval and depth, and the cache hit never refetches', async () => {
   fetchLog.length = 0;
-  const start = new Chess().fen();
+  const start = rules.startFen();
   respond = async () => ({ ok: true, status: 200, json: async () => ({ fen: start, knodes: 105848192, depth: 70, pvs: [{ moves: 'e2e4 e7e5 g1f3', cp: 19 }] }) });
   await post('settings', { onlineFeatures: true });
   await post('new');
