@@ -10,7 +10,7 @@ const { randomUUID } = require("node:crypto");
 process.env.CHESS_ARCHIVE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "chess-sweep-test-"));
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
-const { Chess } = require("chess.js");
+const rules = require("../lib/rules");
 const { app, engine, playingEngine, reviewEngine, coachEngines, archive } = require("../server");
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -18,9 +18,9 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // answers with a different legal move so per-engine results are distinguishable on the wire.
 engine.start = async () => {};
 engine.go = async (fen) => {
-  const moves = new Chess(fen).moves({ verbose: true });
+  const moves = rules.legalMoves(fen);
   const move = moves[0];
-  return { lines: move ? [{ score: { type: "cp", value: 25 }, pv: [move.from + move.to + (move.promotion || "")] }] : [], depth: 12, nps: 100000, best: move?.lan };
+  return { lines: move ? [{ score: { type: "cp", value: 25 }, pv: [move.uci] }] : [], depth: 12, nps: 100000, best: move?.uci };
 };
 reviewEngine.start = engine.start;
 reviewEngine.go = (...args) => engine.go(...args);
@@ -31,10 +31,10 @@ coachEngines.forEach((coach, i) => {
   coach.start = engine.start;
   coach.go = async (fen, multipv) => {
     coachCalls.push({ i, multipv });
-    const moves = new Chess(fen).moves({ verbose: true });
+    const moves = rules.legalMoves(fen);
     const move = moves[Math.min(i, moves.length - 1)];
     await delay(20);
-    return { lines: move ? [{ score: { type: "cp", value: 25 - i }, pv: [move.from + move.to + (move.promotion || "")] }] : [], depth: 12, nps: 1, best: move?.lan };
+    return { lines: move ? [{ score: { type: "cp", value: 25 - i }, pv: [move.uci] }] : [], depth: 12, nps: 1, best: move?.uci };
   };
 });
 
@@ -72,7 +72,7 @@ test("the sweep answers once per engine, multipv 1, only for positions of this g
   assert.ok(sweep.results.every((r) => r.uci || r.error || r.skipped), "every engine answered, errored or was skipped");
   assert.ok(sweep.results.every((r) => !r.uci || /^[a-h][1-8][a-h][1-8]/.test(r.uci)), "results carry real UCI moves");
   // The same membership and revision rules as /api/analyze.
-  await post("sweep", { fen: new Chess("8/8/8/4k3/8/8/8/4K3 w - - 0 1").fen(), atPly: 0 }, 400);
+  await post("sweep", { fen: "8/8/8/4k3/8/8/8/4K3 w - - 0 1", atPly: 0 }, 400);
   await post("sweep", { fen: game.fens[0], atPly: 0, revision: game.revision - 1 }, 409);
   // A repeated sweep of the same ply is served from the per-ply cache: no new engine asks.
   const before = coachCalls.length;
@@ -161,7 +161,6 @@ test("visible tabs keep analysis running while each hidden tab retains its own l
 });
 
 test("restore re-aims engines for the restored variant and resets any in-flight sweep", async () => {
-  const rules = require("../lib/rules");
   const startFen = rules.startFen("chess960", 42);
   const first = rules.legalMoves(startFen, "chess960")[0];
   const applied = rules.apply(startFen, rules.parseUciMove(startFen, first.from + first.to + (first.promotion || ""), "chess960"), "chess960");

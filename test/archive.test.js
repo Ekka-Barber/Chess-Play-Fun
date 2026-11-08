@@ -7,6 +7,7 @@ const { randomUUID } = require('node:crypto');
 const { Resvg } = require('@resvg/resvg-js');
 const { createArchive, renderSvg, ArchiveError } = require('../lib/archive');
 const themes = require('../public/themes');
+const rules = require('../lib/rules');
 
 const START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const AFTER = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1';
@@ -64,6 +65,48 @@ test('same game and ply are idempotent, including concurrent saves', async (t) =
   assert.equal(again.annotation.explanation, input.annotation.explanation);
   assert.equal((await archive.list()).length, 1);
   assert.deepEqual(await fs.readdir(archive.rootDir), [first.id]);
+});
+
+test('archive preserves the actual grading engine and escapes its name in the image', async t => {
+  const archive = await temporaryArchive(t), input = entry();
+  input.annotation.engine = 'Stockfish & verifier';
+  const saved = await archive.save(input), restored = await archive.get(saved.id);
+  assert.equal(restored.annotation.engine, input.annotation.engine);
+  assert.match(renderSvg(input), /Stockfish &amp; verifier/);
+  const invalid = entry(); invalid.annotation.engine = 42;
+  assert.throws(() => renderSvg(invalid), /Engine name/);
+});
+
+test('saved Brilliant lines survive reload with legal positions and explanations', async t => {
+  const archive = await temporaryArchive(t), input = entry();
+  let fen = START;
+  const moves = 'e2e4 e7e5 g1f3 d7d6 f1c4 c8g4 b1c3 g7g6 f3e5'.split(' ').map(uci => {
+    input.beforeFen = fen;
+    const played = rules.apply(fen, rules.parseUciMove(fen, uci)); fen = played.fen; return played.move;
+  });
+  Object.assign(input, { ply: moves.length, moves, move: moves.at(-1), fen });
+  function line(start, ucis) {
+    return ucis.split(' ').map(uci => {
+      const played = rules.apply(start, rules.parseUciMove(start, uci)); start = played.fen;
+      return { uci: played.move.uci, san: played.move.san, from: played.move.from, to: played.move.to,
+        fen: start, explanation: `${played.move.san} follows the engine line.` };
+    });
+  }
+  input.annotation.continuation = line(fen, 'd6e5 d1g4');
+  input.annotation.sacrifice = { piece: 'q', square: 'd1', captureUci: 'g4d1', captureSan: 'Bxd1', materialCost: 9,
+    depth: 18, whiteCp: 99997, outcome: 'The acceptance line leads to checkmate.', continuation: line(fen, 'g4d1 c4f7 e8e7 c3d5') };
+  input.annotation.betterContinuation = line(input.beforeFen, 'f3e5 d6e5');
+  input.annotation.betterUci = 'f3e5'; input.annotation.betterSan = 'Nxe5';
+  const saved = await archive.save(input), restored = await createArchive(archive.rootDir).get(saved.id);
+  assert.deepEqual(restored.annotation, input.annotation);
+  for (const corrupt of [
+    { continuation: [{ ...input.annotation.continuation[0], uci: 'a1a8' }] },
+    { continuation: [{ ...input.annotation.continuation[0], fen: START }] },
+    { continuation: Array(13).fill(input.annotation.continuation[0]) },
+    { sacrifice: { ...input.annotation.sacrifice, square: 'e1' } },
+    { sacrifice: { ...input.annotation.sacrifice, captureUci: 'g4h5' } },
+    { betterUci: 'a2a3' },
+  ]) assert.throws(() => renderSvg({ ...input, annotation: { ...input.annotation, ...corrupt } }), error => error instanceof ArchiveError);
 });
 
 test('orientation, pieces, highlights, coordinates, and theme derive from the saved position', () => {

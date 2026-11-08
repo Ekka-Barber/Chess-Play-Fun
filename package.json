@@ -6,6 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "build": "node scripts/build.js",
     "test": "node --test test/*.test.js",
     "setup:engines": "node scripts/setup-engines.js"
   },
@@ -16,8 +17,5 @@
     "@resvg/resvg-js": "^2.6.2",
     "chessops": "^0.15.1",
     "express": "^4.19.0"
-  },
-  "devDependencies": {
-    "chess.js": "^1.0.0"
   }
 }

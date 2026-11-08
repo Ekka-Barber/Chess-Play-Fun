@@ -31,6 +31,7 @@ const BADGES = (() => {
 })();
 let game, analysis, viewIndex = 0, flipped = false, arrowMode = 'best', selected = null;
 let lastAnimatedBrilliant = '';
+let lastCoachBrilliant = '', shownVariation = null;
 let busy = false, promoting = false, gesture = null, focusedSquare = 'e2';
 let pieces = new Map(), boardFen = '', panelFingerprint = '', pollTimer, analysisTimer, toastTimer, pauseTimer;
 let online = true, polling = false, themeKey = 'classic', collection = null, seenArchive = null, restoreId = null, reviewOpenedFor = null;
@@ -178,6 +179,7 @@ function place(el, sq, instant = false) {
 }
 
 function syncBoard(fen, instant = false) {
+  if (fen !== boardFen) window.CHESS_BRILLIANT.cancel();
   const position = parseBoard(fen);
   const available = new Set(pieces.values());
   const next = new Map();
@@ -270,17 +272,10 @@ function renderBoardBadge() {
 }
 
 function animateBrilliant(element) {
-  const icon = element.querySelector('svg');
-  if (!icon || matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
-  icon.getAnimations().forEach(animation => animation.cancel());
-  icon.animate([{ transform: 'scale(.75) rotate(-12deg)' }, { transform: 'scale(1.25) rotate(4deg)', offset: .45 }, { transform: 'scale(1) rotate(0)' }], { duration: 650, easing: 'cubic-bezier(.16,1,.3,1)' });
-  element.querySelector('.brilliant-burst')?.remove();
-  const burst = document.createElement('span'); burst.className = 'brilliant-burst'; burst.setAttribute('aria-hidden', 'true');
-  burst.innerHTML = '<svg viewBox="0 0 100 100"><path d="M50 10v10m0 60v10M10 50h10m60 0h10M22 22l7 7m42 42 7 7M22 78l7-7m42-42 7-7" fill="none" stroke="#0d7a73" stroke-width="3" stroke-linecap="round"/></svg>';
-  element.append(burst);
-  const animation = burst.animate([{ transform: 'scale(.6) rotate(-8deg)', opacity: 1 }, { transform: 'scale(1.15) rotate(4deg)', opacity: 0 }], { duration: 700, easing: 'ease-out', fill: 'forwards' });
-  animation.finished.then(() => burst.remove(), () => burst.remove());
-  return true;
+  const live = element === $('#boardBadge'), move = game?.moveLog[viewIndex - 1];
+  return window.CHESS_BRILLIANT.play({ badge: element, board: live ? board : null,
+    square: live ? move?.to : null, piece: live ? pieces.get(move?.to)?.querySelector('img') : null,
+    color: BADGES.brilliant.color });
 }
 
 function select(sq) { selected = sq; updateHighlights(); }
@@ -811,6 +806,53 @@ function badgeEl(note) {
   return badge;
 }
 
+function openVariation(title, fen, steps, engine, depth, intro) {
+  if (!steps?.length) return;
+  shownVariation = { title, fen, steps, engine, depth, intro, index: 0 };
+  renderVariation();
+  $('#variationDialog').showModal();
+}
+
+function renderVariation() {
+  if (!shownVariation) return;
+  const { title, fen, steps, engine, depth, intro, index } = shownVariation;
+  const step = steps[index - 1], position = parseBoard(step?.fen || fen), target = $('#variationBoard');
+  text($('#variationTitle'), title);
+  text($('#variationContext'), [engine || 'Local analysis', depth ? `depth ${depth}` : null, 'Study line'].filter(Boolean).join(' · '));
+  target.replaceChildren();
+  const names = [];
+  for (let rank = 0; rank < 8; rank++) for (let file = 0; file < 8; file++) {
+    const square = FILES[flipped ? 7 - file : file] + (flipped ? rank + 1 : 8 - rank), code = position[square];
+    const cell = document.createElement('span');
+    cell.className = `variation-square ${((square.charCodeAt(0) - 97) + Number(square[1])) % 2 ? 'light' : 'dark'}`;
+    cell.dataset.square = square;
+    cell.classList.toggle('last', square === step?.from || square === step?.to);
+    if (code) {
+      const image = document.createElement('img'); image.src = pieceImage(code); image.alt = ''; image.draggable = false;
+      cell.append(image); names.push(`${colorName(colorOf(code))} ${NAMES[code.toLowerCase()]} ${square}`);
+    }
+    if (file === 0) { const label = document.createElement('small'); label.className = 'rank'; label.textContent = square[1]; cell.append(label); }
+    if (rank === 7) { const label = document.createElement('small'); label.className = 'file'; label.textContent = square[0]; cell.append(label); }
+    target.append(cell);
+  }
+  target.setAttribute('aria-label', `${step ? `After ${step.san}` : 'Starting position'}. ${names.join(', ')}.`);
+  text($('#variationPosition'), `${index} / ${steps.length}`);
+  $('#variationStart').disabled = $('#variationPrev').disabled = index === 0;
+  $('#variationNext').disabled = index === steps.length;
+  const moves = $('#variationMoves'), focusedStep = document.activeElement?.closest('#variationMoves button')?.dataset.step;
+  moves.replaceChildren();
+  steps.forEach((item, i) => {
+    const button = document.createElement('button');
+    button.textContent = lineText(i ? steps[i - 1].fen : fen, [item.san]);
+    button.dataset.step = i;
+    button.setAttribute('aria-current', index === i + 1 ? 'step' : 'false');
+    button.onclick = () => { shownVariation.index = i + 1; renderVariation(); };
+    moves.append(button);
+  });
+  if (focusedStep !== undefined) moves.querySelector(`[data-step="${focusedStep}"]`)?.focus({ preventScroll: true });
+  text($('#variationReason'), step?.explanation || (step ? `${step.san}. Follow the continuation on the board.` : intro || 'Choose Next or select a move to follow this line.'));
+}
+
 function renderCoach(hintKey) {
   const s = game.settings, engineGame = s.mode === 'engine', bot = botSide(s), last = game.moveLog.length;
   const turn = currentFen().split(' ')[1];
@@ -841,7 +883,26 @@ function renderCoach(hintKey) {
   const steps = move && note?.type !== 'book' ? note?.continuation || [] : [];
   continuation.classList.toggle('hidden', !steps.length);
   text(continuation, steps.length ? `Expected: ${lineText(game.fens[ply + 1], steps.slice(0, 6).map((step) => step.san))}` : '');
-  text($('#coachEvidence'), graded && note.depth ? [`Depth ${note.depth}`, note.whiteCp != null ? `White ${scoreLabel(note.whiteCp)}` : null, note.lossCp > 0 && note.lossCp < 5000 ? `${(note.lossCp / 100).toFixed(1)} pawns below best` : null].filter(Boolean).join(' · ') : '');
+  text($('#coachEvidence'), graded && note.depth ? [note.engine || engineName, `depth ${note.depth}`, note.whiteCp != null ? `White ${scoreLabel(note.whiteCp)}` : null, note.lossCp > 0 && note.lossCp < 5000 ? `${(note.lossCp / 100).toFixed(1)} pawns below best` : null].filter(Boolean).join(' · ') : '');
+  const status = $('#coachStatus'), actions = $('#coachActions');
+  status.classList.toggle('hidden', !note?.needsDepth);
+  text(status, note?.needsDepth ? `Sacrifice candidate. ${note.verificationError || 'A deeper search is still needed to confirm it.'}` : '');
+  const focusedAction = document.activeElement?.closest('#coachActions button')?.dataset.action;
+  actions.replaceChildren();
+  const action = (id, label, run) => { const button = document.createElement('button'); button.dataset.action = id; button.textContent = label; button.disabled = busy; button.onclick = run; actions.append(button); };
+  if (note?.sacrifice?.continuation?.length) action('acceptance', 'If they take', () => openVariation('If they accept the sacrifice', game.fens[ply + 1], note.sacrifice.continuation, note.engine, note.sacrifice.depth, note.sacrifice.outcome));
+  if (note?.sacrifice?.lineError) { status.classList.remove('hidden'); text(status, note.sacrifice.lineError); }
+  if (steps.length) action('reply', 'Explore the reply', () => openVariation('The engine’s continuation', game.fens[ply + 1], steps, note.engine, note.depth));
+  if (note?.betterContinuation?.length) action('compare', `Compare ${note.betterSan}`, () => openVariation('A stronger continuation', game.fens[ply], note.betterContinuation, note.engine, note.depth));
+  const missingStudy = note?.type === 'brilliant' && !steps.length && !note.sacrifice?.continuation?.length;
+  if (note?.needsDepth || note?.sacrifice?.lineError || missingStudy) action('confirm', missingStudy ? 'Load study lines' : 'Confirm with deep review', () => api('review', { deep: true }).then(pollAnalysis).catch(error => notify(error.message, true)));
+  if (note?.type === 'brilliant' && !retry) action('replay', 'Replay celebration', () => { setView(ply + 1); animateBrilliant($('#boardBadge')); });
+  if (focusedAction !== undefined) actions.querySelector(`[data-action="${focusedAction}"]`)?.focus({ preventScroll: true });
+  const confirmed = `${game.id}:${ply}`;
+  if (note?.type === 'brilliant' && ply === last - 2 && viewIndex === last && move.color !== bot && !retry && lastCoachBrilliant !== confirmed) {
+    lastCoachBrilliant = confirmed;
+    animateBrilliant(badge);
+  }
   saved.classList.toggle('hidden', note?.type !== 'brilliant');
   if (note?.type === 'brilliant') {
     const label = document.createElement('span'), action = document.createElement('button');
@@ -879,7 +940,7 @@ function renderCoach(hintKey) {
 
 function maybeFetchHint(live) {
   const key = `${game.revision}:${viewIndex}`;
-  if (hints.has(key) || !live?.lines.length) return;
+  if (hints.has(key) || live?.phase !== 'ready' || !live.lines.length) return;
   hints.set(key, { loading: true });
   api(`hint?ply=${viewIndex}`).then((hint) => hints.set(key, hint)).catch(() => hints.delete(key)).finally(() => renderPanels());
 }
@@ -1549,6 +1610,7 @@ function momentDetail(ply, note, hasNext) {
 function setView(index) {
   if (!game || busy || promoting) return;
   cancelGesture();
+  window.CHESS_BRILLIANT.cancel();
   if (retry && index !== retry.ply) retry = null;
   viewIndex = Math.max(0, Math.min(index, game.moveLog.length));
   selected = null;
@@ -1759,6 +1821,20 @@ $('#restoreConfirm').onclick = async () => {
 };
 $('#appearance').onclick = () => $('#appearanceDialog').showModal();
 $('#appearanceClose').onclick = () => $('#appearanceDialog').close();
+$('#appearanceDialog').addEventListener('close', () => window.CHESS_BRILLIANT.cancel());
+$('#variationClose').onclick = () => $('#variationDialog').close();
+$('#variationDialog').addEventListener('close', () => { shownVariation = null; });
+$('#variationStart').onclick = () => { shownVariation.index = 0; renderVariation(); };
+$('#variationPrev').onclick = () => { shownVariation.index--; renderVariation(); };
+$('#variationNext').onclick = () => { shownVariation.index++; renderVariation(); };
+$('#variationDialog').addEventListener('keydown', event => {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || !shownVariation) return;
+  event.preventDefault(); event.stopPropagation();
+  shownVariation.index = event.key === 'Home' ? 0 : event.key === 'End' ? shownVariation.steps.length
+    : Math.max(0, Math.min(shownVariation.steps.length, shownVariation.index + (event.key === 'ArrowRight' ? 1 : -1)));
+  renderVariation();
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden) window.CHESS_BRILLIANT.cancel(); });
 $('#brilliantPreview').innerHTML = BADGES.brilliant.svg;
 $('#previewBrilliant').onclick = () => text($('#brilliantPreviewStatus'), animateBrilliant($('#brilliantPreview')) ? '' : 'Reduced motion is on.');
 $('#theme').onchange = () => { applyTheme(choiceValue('theme')); api('settings', { theme: themeKey }).catch(() => {}); };
@@ -1820,6 +1896,7 @@ $('#undo').onclick = async () => {
   mutate('undo', { atPly: Math.max(0, viewIndex - 1) });
 };
 $('#flip').onclick = () => {
+  window.CHESS_BRILLIANT.cancel();
   cancelGesture(); flipped = !flipped; selected = null;
   if (game) { game.settings.flipped = flipped; api('settings', { flipped }).catch(() => {}); }
   buildSquares(); syncBoard(currentFen(), true); renderPanels(true);
@@ -1891,7 +1968,7 @@ tabs.forEach((tab, i) => {
 });
 
 document.addEventListener('keydown', (event) => {
-  if (!game || !$('#puzzleWorkspace').classList.contains('hidden') || event.target.closest('dialog,input,textarea') || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (!game || !$('#puzzleWorkspace').classList.contains('hidden') || document.querySelector('dialog[open]') || event.target.closest('input,textarea') || event.ctrlKey || event.metaKey || event.altKey) return;
   if (event.key === 'Escape') { cancelGesture(); select(null); return; }
   if (board.contains(event.target) && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', ' '].includes(event.key)) {
     event.preventDefault();

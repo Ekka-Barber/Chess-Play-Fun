@@ -243,16 +243,67 @@ async function saveBrilliant(ply,annotation) {
   }catch(error){if(id===gameId && annotations[ply]===annotation)annotation.archiveError=error.message;throw error;}
 }
 async function reviewMove(ply,pre,post,ticket) {
-  const assess=(before,after)=>assessMove({beforeFen:fens[ply],afterFen:fens[ply+1],move:moveLog[ply],pre:before,
+  const id=gameId, beforeFen=fens[ply], afterFen=fens[ply+1], job=deepJob;
+  const stale=()=>id!==gameId || fens[ply]!==beforeFen || fens[ply+1]!==afterFen
+    || (ticket===undefined?job!==deepJob:ticket!==analysisTicket);
+  const selected=pickEngines(currentEngine()).analysis;
+  let source=ticket===undefined?reviewEngine:engine, sourceName=selected.name, sourceId=selected.id;
+  // MCTS depth cannot satisfy alpha-beta confidence gates; retain its actual depth only as evidence.
+  const assess=(before,after)=>({...assessMove({beforeFen,afterFen,move:moveLog[ply],pre:sourceId==='lc0'?{...before,depth:0}:before,
     post:after.lines.length?after:{...after,lines:[{whiteCp:after.terminalCp,pv:[],sanLine:[],mate:Boolean(after.terminalCp)}]},
-    book:isBook(ply),opening:openingName(ply+1),variant:settings.variant});
+    book:isBook(ply),opening:openingName(ply+1),variant:settings.variant}),depth:Math.min(before.depth||0,after.depth||0),engine:sourceName});
+  const search=async(index,multipv,searchmoves)=>{
+    const fen=fens[index], run=()=>source.go(fen,multipv,GRADE.ms,optionsFor(index,{depth:GRADE.depth,...(searchmoves?{searchmoves}:{})}));
+    const raw=source===engine?await run():await source.exec(run);
+    if(stale())return null;
+    return {depth:raw.depth,lines:raw.lines.map((line,i)=>mkLine(line,i+1,fen))};
+  };
   let annotation=assess(pre,post);
-  // Only a possible sacrifice that the quick search was too shallow to confirm gets the slow, deeper search.
-  if(annotation.needsDepth && ticket!==undefined) {
-    const deepPre=await searchPosition(ply,ticket,GRADE.ms,GRADE.depth);if(!deepPre)return;
-    const deepPost=await searchPosition(ply+1,ticket,GRADE.ms,GRADE.depth);if(!deepPost)return;
-    annotation=assess(deepPre,deepPost);
+  if(annotation.needsDepth) {
+    const verifier=ENGINES.findIndex(entry=>entry.id==='stockfish');
+    // MCTS depth (Leela) is not alpha-beta depth. Keep selected-engine suggestions and attribute the verifier separately.
+    if(selected.id!=='stockfish' && verifier>=0) {
+      const selectedSource=source, selectedName=sourceName, selectedId=sourceId;
+      source=coachEngines[verifier];sourceName=ENGINES[verifier].name;sourceId='stockfish';
+      try {
+        const deepPre=await search(ply,3);if(!deepPre)return;
+        const deepPost=await search(ply+1,3);if(!deepPost)return;
+        pre=deepPre;post=deepPost;annotation=assess(pre,post);
+      } catch(error) {
+        if(stale() || error?.code===SEARCH_CANCELLED)return;
+        source=selectedSource;sourceName=selectedName;sourceId=selectedId;
+        annotation.verificationError='The confirmation engine is unavailable. Try deep review again.';
+      }
+    } else if(ticket!==undefined) {
+      const deepPre=await searchPosition(ply,ticket,GRADE.ms,GRADE.depth);if(!deepPre)return;
+      const deepPost=await searchPosition(ply+1,ticket,GRADE.ms,GRADE.depth);if(!deepPost)return;
+      pre=deepPre;post=deepPost;annotation=assess(pre,post);
+    }
   }
+  if(annotation.type==='brilliant') {
+    const capture=annotation.sacrifice.captureUci;
+    let accepted=post.lines.find(line=>line.uci===capture);
+    if(!accepted) {
+      try {
+        const report=await search(ply+1,1,[capture]);if(!report)return;
+        accepted=report.lines.find(line=>line.uci===capture);
+      } catch(error) {
+        if(stale() || error?.code===SEARCH_CANCELLED)return;
+        annotation.sacrifice.lineError='The acceptance line could not be loaded. Try deep review again.';
+      }
+    }
+    if(accepted) {
+      annotation.sacrifice.continuation=hint({fen:afterFen,line:accepted,variant:settings.variant}).continuation;
+      annotation.sacrifice.depth=accepted.depth || post.depth;
+      annotation.sacrifice.whiteCp=accepted.whiteCp;
+      const steps=annotation.sacrifice.continuation;
+      annotation.sacrifice.outcome=Math.abs(accepted.whiteCp)>=90000 && accepted.whiteCp*(moveLog[ply].color==='w'?1:-1)>0
+        ? 'Accepting this sacrifice allows a forced checkmate.'
+        : steps[1] ? `After ${steps[0].san}, ${steps[1].explanation}` : 'Follow the acceptance line to see the engine’s response.';
+      annotation.explanation+=` ${annotation.sacrifice.outcome}`;
+    }
+  }
+  if(stale())return;
   annotations[ply]=annotation;
   // The collection is for the player's own finds, not Stockfish's replies.
   if(annotation.type==='brilliant' && !moveLog[ply].engine)try{await saveBrilliant(ply,annotation);}catch(error){console.error('[archive]',error.message);}
@@ -372,7 +423,7 @@ function queueReview(ply) {
 // Game review: grade every ungraded move and (in scheduleAnalysis) evaluate every position.
 function requestReview() {
   reviewAll=true;
-  moveLog.forEach((move,ply)=>{if(!annotations[ply] || annotations[ply].type==='unrated')queueReview(ply);});
+  moveLog.forEach((move,ply)=>{if(!annotations[ply] || ['unrated','book'].includes(annotations[ply].type))queueReview(ply);});
 }
 // Walks every position at DEEP depth and re-grades each move as soon as both sides of it are deep. It re-reads the
 // game each step, so moves played meanwhile are included and a changed position is searched again.
@@ -394,7 +445,7 @@ async function startDeepReview() {
         if(result.lines[0])evalHist[ply]=result.lines[0].whiteCp;
       }
       const move=ply-1, post=terminal||cache.get(ply);
-      if(move>=0 && annotations[move]?.type!=='book' && isDeep(cache.get(move)) && post)await reviewMove(move,cache.get(move),post);
+      if(move>=0 && isDeep(cache.get(move)) && post)await reviewMove(move,cache.get(move),post);
     }
   } catch(error){if(error?.code!==SEARCH_CANCELLED)console.error('[deep review]',error.message);}
   finally {if(job===deepJob)deep={active:false,startedAt:0};}

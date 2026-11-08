@@ -9,6 +9,7 @@
   <title>CHESS · Play & learn</title>
   <link rel="icon" href="pieces/wN.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="brilliant-effects.css">
   <script src="themes.js"></script>
 </head>
 <body>
@@ -69,9 +70,11 @@
           <p id="coachText" class="coach-copy">Select a piece. Its legal moves appear on the board. Move both sides to explore, or start a game against Stockfish.</p>
           <p id="coachContinuation" class="coach-continuation hidden"></p>
           <p id="coachEvidence" class="coach-evidence"></p>
+          <p id="coachStatus" class="coach-status hidden" role="status"></p>
+          <div id="coachActions" class="coach-actions"></div>
           <div id="savedMove" class="saved-move hidden"></div>
           <div class="coach-next"><h3 id="hintTitle">Find your next move</h3><p id="hintText">Your coach is analysing this position.</p><button id="playHint" class="coach-play" disabled>Try the engine’s idea<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button></div>
-          <details class="review-guide"><summary>About move ratings</summary><p>Book follows a known opening. Best matches the engine’s first choice. Excellent and Good keep most of your position’s value. Inaccuracies, mistakes and blunders lose increasing chances.</p><p>Brilliant means a sound, newly offered piece sacrifice that stays close to the best move. Great marks a critical only-good choice. These are conservative local assessments, not Chess.com’s proprietary ratings. More search can change an assessment.</p></details>
+          <details class="review-guide"><summary>About move ratings</summary><p>Book follows a known opening. Best matches the engine’s first choice. Excellent and Good keep most of your position’s value. Inaccuracies, mistakes and blunders lose increasing chances.</p><p>Brilliant means a sound, voluntary piece sacrifice that stays close to the best move. Great marks a critical only-good choice. These are local assessments. More search can change an assessment.</p></details>
         </section>
         <div id="analysisPanel" role="tabpanel" aria-labelledby="tabAnalysis" class="hidden">
         <section class="engine-section">
@@ -125,6 +128,15 @@
   <dialog id="restoreDialog" class="confirm-dialog" aria-labelledby="restoreTitle"><h2 id="restoreTitle">Study this saved game?</h2><p>Your current move sheet will be replaced with the saved game. The saved image stays in your collection.</p><div class="dialog-actions"><button id="restoreCancel">Keep current game</button><button id="restoreConfirm" class="new-button">Study saved move</button></div></dialog>
   <dialog id="discardDialog" class="confirm-dialog" aria-labelledby="discardTitle"><h2 id="discardTitle"></h2><p id="discardText"></p><div class="dialog-actions"><button id="discardCancel">Keep this game</button><button id="discardConfirm" class="new-button">Discard and move</button></div></dialog>
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <dialog id="variationDialog" class="variation-dialog" aria-labelledby="variationTitle">
+    <div class="dialog-heading"><h2 id="variationTitle">Study the continuation</h2><button id="variationClose" aria-label="Close continuation">Close</button></div>
+    <p id="variationContext" class="coach-evidence"></p>
+    <div id="variationBoard" class="variation-board" role="img"></div>
+    <div class="variation-nav" role="group" aria-label="Continuation navigation"><button id="variationStart">Start</button><button id="variationPrev">Previous</button><output id="variationPosition" aria-live="polite"></output><button id="variationNext">Next</button></div>
+    <div id="variationMoves" class="variation-moves" role="group" aria-label="Moves in this continuation"></div>
+    <p id="variationReason" class="coach-copy" role="status"></p>
+  </dialog>
+  <script src="brilliant-effects.js"></script>
   <script src="clock.js"></script>
   <script src="piece-sets.js"></script>
   <script src="puzzles.js"></script>

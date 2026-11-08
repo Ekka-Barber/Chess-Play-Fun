@@ -101,7 +101,6 @@ h1 { margin: 0; font-family: Sentient,Georgia,serif; font-size: 29px; line-heigh
 .board-badge svg,.badge svg { display: block; width: 100%; height: 100%; stroke: none; filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / .4)); }
 .brilliant-preview-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 18px; }.brilliant-preview-row button { background: var(--raised); font-size: 13px; }
 .brilliant-preview { position: relative; display: block; width: 30px; height: 30px; }.brilliant-preview > svg { display: block; width: 100%; height: 100%; }
-.brilliant-burst { position: absolute; inset: -70%; pointer-events: none; }.brilliant-burst svg { display: block; width: 100%; height: 100%; filter: none; }
 .evalwrap { height: 100%; }.evalbar { position: relative; height: 100%; background: #585952; border-radius: 4px; overflow: hidden; display: flex; align-items: end; }
 .evalbar::after { content: ''; position: absolute; top: calc(50% - 1px); left: 0; right: 0; height: 2px; background: #a2a397; }
 .evalfill { width: 100%; height: 50%; background: #e6e3d9; transition: height .2s var(--ease); }.evalwrap.flipped .evalbar { transform: rotate(180deg); }
@@ -142,11 +141,34 @@ h1 { margin: 0; font-family: Sentient,Georgia,serif; font-size: 29px; line-heigh
 .coach-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .coach-title h2 { font-family: Sentient,Georgia,serif; font-size: 23px; font-weight: 500; line-height: 1.3; }
 /* Mixing with the text colour keeps the grade colour readable on dark and light themes. */
-.review-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; color: color-mix(in srgb, var(--badge, var(--text)) 72%, var(--text)); }
+.review-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; color: color-mix(in srgb, var(--badge, var(--text)) 35%, var(--text)); }
 .badge { display: inline-block; flex: none; width: 18px; height: 18px; }
 .review-badge .badge { width: 28px; height: 28px; }
 .coach-copy { margin: 10px 0 0; font-size: 14px; line-height: 1.6; }
 .coach-continuation,.coach-evidence { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.coach-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.coach-actions:empty { display: none; }
+.coach-actions button { min-height: 38px; background: var(--raised); color: var(--text); padding: 8px 12px; font-size: 12px; }
+.coach-actions button:hover { background: color-mix(in srgb, var(--raised) 85%, var(--text)); }
+.coach-status { margin: 12px 0 0; color: var(--text); font-size: 13px; line-height: 1.5; }
+.variation-dialog { width: min(520px, calc(100% - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 22px; }
+.variation-dialog .dialog-heading { align-items: start; }
+.variation-dialog .dialog-heading h2 { font-size: 24px; line-height: 1.25; }
+.variation-dialog .dialog-heading button { flex-shrink: 0; width: auto; padding: 8px 12px; font-size: 13px; }
+.variation-board { display: grid; grid-template-columns: repeat(8, 1fr); aspect-ratio: 1; margin: 16px 0 12px; }
+.variation-square { position: relative; display: grid; place-items: center; min-width: 0; aspect-ratio: 1; }
+.variation-square.light { background: var(--light); }.variation-square.dark { background: var(--dark); }
+.variation-square.last { box-shadow: inset 0 0 0 3px var(--target); }
+.variation-square img { display: block; width: 87%; height: 87%; }
+.variation-square small { position: absolute; font-size: 10px; font-weight: 700; line-height: 1; }
+.variation-square .rank { left: 3px; top: 3px; }.variation-square .file { right: 3px; bottom: 3px; }
+.variation-square.light small { color: var(--coord-light); }.variation-square.dark small { color: var(--coord-dark); }
+.variation-nav { display: grid; grid-template-columns: auto auto minmax(40px, 1fr) auto; align-items: center; gap: 6px; }
+.variation-nav button { min-height: 42px; padding: 8px 10px; font-size: 13px; background: var(--raised); }
+.variation-nav output { text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
+.variation-moves { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 12px; }
+.variation-moves button { min-height: 38px; padding: 6px 10px; font-size: 13px; background: transparent; color: var(--muted); }
+.variation-moves button[aria-current='step'] { background: var(--raised); color: var(--text); font-weight: 700; }
 .saved-move { margin-top: 14px; padding: 6px 6px 6px 12px; border-radius: 6px; background: color-mix(in srgb, #1baca6 24%, var(--surface)); display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
 .saved-move button { font-size: 12px; font-weight: 600; flex: none; }
 .coach-next { margin-top: 20px; padding: 16px; border-radius: 6px; background: var(--raised); }
@@ -179,7 +201,7 @@ h1 { margin: 0; font-family: Sentient,Georgia,serif; font-size: 29px; line-heigh
 .graph-marker:hover { background: transparent; }.graph-marker:hover::before,.graph-marker:focus-visible::before { transform: scale(1.3); }
 .review-table { width: 100%; margin-top: 16px; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
 .review-table tr:nth-child(even) { background: color-mix(in srgb, var(--raised) 45%, var(--surface)); }
-.review-table th { padding: 4px 8px; text-align: left; font-weight: 700; color: color-mix(in srgb, var(--badge) 72%, var(--text)); }
+.review-table th { padding: 4px 8px; text-align: left; font-weight: 700; color: color-mix(in srgb, var(--badge) 35%, var(--text)); }
 .review-table th .badge { width: 20px; height: 20px; margin-right: 8px; vertical-align: middle; }
 .review-table td { width: 56px; text-align: center; }
 .review-table td button { width: 44px; min-height: 34px; padding: 0; font-weight: 700; }
@@ -188,7 +210,7 @@ h1 { margin: 0; font-family: Sentient,Georgia,serif; font-size: 29px; line-heigh
 .key-moments { margin: 0 -6px; padding: 0; list-style: none; }
 .moment { width: 100%; justify-content: flex-start; gap: 8px; padding: 0 8px; font-size: 13px; }
 .moment.cur { background: var(--raised); }
-.moment-label { margin-left: auto; font-weight: 700; color: color-mix(in srgb, var(--badge) 72%, var(--text)); }
+.moment-label { margin-left: auto; font-weight: 700; color: color-mix(in srgb, var(--badge) 35%, var(--text)); }
 .moment-detail { padding: 2px 10px 12px 34px; }
 .moment-detail p { margin: 4px 0 6px; font-size: 13px; line-height: 1.55; }
 .moment-change { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }

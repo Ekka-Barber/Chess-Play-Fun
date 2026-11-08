@@ -1,0 +1,38 @@
+.brilliant-wave-cell {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.brilliant-effects {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  user-select: none;
+}
+
+.brilliant-effects * { pointer-events: none; }
+
+.brilliant-glyph {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 1.2em;
+  height: 1.2em;
+  translate: -50% -50%;
+  color: var(--brilliant-color, #0d7a73);
+  font-family: inherit;
+  font-size: clamp(14px, 2.5vw, 25px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brilliant-effects, .brilliant-wave-cell { display: none; }
+}
