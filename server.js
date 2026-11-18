@@ -515,6 +515,8 @@ app.use((req,res,next)=>{
   if(req.path.startsWith('/api/'))res.set('Cache-Control','no-store');next();
 });
 app.use(express.static(path.join(__dirname,'public')));
+// three.js for the Brilliant celebration is served from the installed package, so the app stays offline and unbundled.
+app.use('/vendor/three',express.static(path.join(__dirname,'node_modules','three','build')));
 const route=(handler)=>(req,res,next)=>Promise.resolve().then(()=>handler(req,res)).catch(next);
 function expectRevision(value){if(value!==undefined && value!==revision)throw Object.assign(new Error('The board changed. Try again from the refreshed position.'),{status:409});}
 app.get('/api/state',(req,res)=>res.json(gameInfo()));

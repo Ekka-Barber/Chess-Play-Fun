@@ -6,6 +6,7 @@
     active = null;
     if (!run) return;
     root.clearTimeout(run.timer);
+    run.stop3d?.();
     run.motion?.removeEventListener?.('change', run.motionChange);
     for (const animation of run.animations) animation.cancel();
     for (const decoration of run.decorations) decoration.remove();
@@ -52,7 +53,9 @@
 
     const squares = board ? [...board.querySelectorAll('#squares .square')] : [];
     const origin = squares.find(element => element.dataset.square === square);
-    if (origin && /^[a-h][1-8]$/.test(square)) {
+    const finish = (after) => { root.clearTimeout(run.timer); run.timer = root.setTimeout(() => { if (active === run) cancel(); }, after); };
+    // The flat wave and glyph burst: the whole board effect where WebGL or the 3D library is unavailable.
+    const flat = () => {
       const file = square.charCodeAt(0), rank = Number(square[1]);
       for (const cell of squares) {
         const target = cell.dataset.square;
@@ -84,9 +87,17 @@
           { transform: `translate3d(${spread * 42}px,${area.height * 0.32}px,0) rotate(${spread * 28}deg) scale(0.9)`, opacity: 0 },
         ], { duration: 1200, delay: impact + index * 38, easing: 'cubic-bezier(0.2,0.6,0.4,1)' });
       }
-    }
+    };
     motion?.addEventListener?.('change', run.motionChange);
-    run.timer = root.setTimeout(() => { if (active === run) cancel(); }, 2200);
+    finish(2200);
+    if (origin && /^[a-h][1-8]$/.test(square)) {
+      // The 3D scene ends itself; the long timer only covers a library that never finishes loading.
+      if (root.CHESS_BRILLIANT_3D) {
+        finish(8000);
+        run.stop3d = root.CHESS_BRILLIANT_3D.start({ board, square, color,
+          onFail: () => { if (active === run) { flat(); finish(2200); } }, onDone: () => { if (active === run) cancel(); } });
+      } else flat();
+    }
     return true;
   }
 

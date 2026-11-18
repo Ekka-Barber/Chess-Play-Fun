@@ -5,7 +5,7 @@
 A local chess workbench for Windows. Play Standard or Chess960, compare engine moves, solve puzzles, and review mistakes with explanations and retry drills. Candidate moves appear while the engines search on your computer. Optional Lichess features stay off until you enable them.
 
 [![CI](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml/badge.svg)](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml)
-![161 tests](https://img.shields.io/badge/tests-161-407548)
+![162 tests](https://img.shields.io/badge/tests-162-407548)
 ![Windows x64](https://img.shields.io/badge/platform-Windows_x64-625846)
 [![MIT license](https://img.shields.io/badge/code-MIT-625846)](LICENSE)
 
@@ -22,9 +22,10 @@ The latest tagged release is [v4.0.2](https://github.com/Ekka-Barber/Chess-Play-
 - **Lighter installation.** Removed the duplicate chess.js dependency, reducing installed file size by 8.47%.
 - **Stricter Brilliant.** A sacrifice must keep its material given up for five plies or end in mate. Trades, fork tricks, desperados, moves made in check, and sacrifices in an already won position no longer earn the badge.
 - **Faster long games.** Polls no longer re-parse or re-send the whole game, a new game keeps the running engine, and stepping through a reviewed game is quicker. See [Measured performance](#measured-performance).
+- **A 3D Brilliant celebration.** A confirmed Brilliant now plays in real 3D over the board: shards race in to build a solid "!!" above the board, its two strokes flip end over end, then it drops like a stamp, shatters on the square and sends a ring of glass slabs rippling outwards, all casting shadows on the real board. It runs once, takes 2.4 seconds, stops the moment you touch the board, and is skipped when reduced motion is on. Without WebGL the earlier flat effect plays instead.
 - **Engines that recover and stay ready.** A stalled engine start no longer needs Retry, and the engine for a visible board no longer quits after five idle minutes.
 
-Verified with **161 passing tests**, the build gate, and desktop browser checks of the changed paths. Details: [Brilliant review](design-plans/brilliant-review.md) · [Dependency audit](design-plans/dependency-audit.md).
+Verified with **162 passing tests**, the build gate, and desktop browser checks of the changed paths. Details: [Brilliant review](design-plans/brilliant-review.md) · [Dependency audit](design-plans/dependency-audit.md).
 
 ## Run locally
 
@@ -234,9 +235,9 @@ npm test
 npm run build
 ```
 
-The local audit passed **161 tests**. The build gate checks JavaScript syntax and local page assets; source is still served directly. Tests stub the engine boundary and run without downloading the binaries; the alternate-engine switch case skips when no second engine is installed. Frozen real-engine snapshots also cover direct, indirect, voluntary, and unsound sacrifices. [GitHub Actions](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml) runs the suite on Node 20 and 22. The Chromium harness also accepts a debugging port and an explicit disposable app URL: `node test/browser.cjs <debug-port> http://127.0.0.1:4660/`. It replaces that server's game while testing.
+The local audit passed **162 tests**. The build gate checks JavaScript syntax and local page assets; source is still served directly. Tests stub the engine boundary and run without downloading the binaries; the alternate-engine switch case skips when no second engine is installed. Frozen real-engine snapshots also cover direct, indirect, voluntary, and unsound sacrifices. [GitHub Actions](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml) runs the suite on Node 20 and 22. The Chromium harness also accepts a debugging port and an explicit disposable app URL: `node test/browser.cjs <debug-port> http://127.0.0.1:4660/`. It replaces that server's game while testing.
 
-Production dependencies remain chessops, Express, and resvg. See the [dependency audit](design-plans/dependency-audit.md) for the cleanup and size measurements.
+Production dependencies are chessops, Express, resvg, and three.js (loaded only when a Brilliant celebration plays, and served from the installed package, so the app still works offline). See the [dependency audit](design-plans/dependency-audit.md) for the cleanup and size measurements.
 
 Coverage includes legal moves and Chess960 castling, stale requests, engine fallback and switching, progressive analysis, exclusive search scheduling, tab visibility, clocks, move grading, retry judging, archive writes, online opt-in, legal puzzle lines and daily-puzzle validation, evaluation-chart gaps and retry privacy, arrow geometry, and contrast rules.
 

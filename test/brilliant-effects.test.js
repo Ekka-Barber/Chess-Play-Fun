@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../public/brilliant-effects.js'), 'utf8');
 
-function setup(flipped = false) {
+function setup(flipped = false, three = null) {
   const animations = [], timers = new Map(), listeners = new Set();
   let sequence = 0;
   const motion = { matches: false, addEventListener: (name, fn) => listeners.add(fn), removeEventListener: (name, fn) => listeners.delete(fn) };
@@ -40,7 +40,7 @@ function setup(flipped = false) {
   board.querySelector = selector => selector === '.pieces' ? pieces : null;
   board.append(pieces);
   board.insertBefore = (child, before) => { child.remove(); board.children.splice(board.children.indexOf(before), 0, child); child.parent = board; };
-  const window = { matchMedia: () => motion, setTimeout: fn => { timers.set(++sequence, fn); return sequence; }, clearTimeout: id => timers.delete(id) };
+  const window = { matchMedia: () => motion, setTimeout: fn => { timers.set(++sequence, fn); return sequence; }, clearTimeout: id => timers.delete(id), ...(three ? { CHESS_BRILLIANT_3D: three } : {}) };
   vm.runInNewContext(source, { window });
   return { api: window.CHESS_BRILLIANT, animations, timers, listeners, motion, svg, badge, board, pieces, squares,
     piece: element({ left: 360, top: 380, width: 80, height: 80 }),
@@ -153,4 +153,27 @@ test('replays replace previous effects and a changed motion preference clears th
   assert.deepEqual(env.board.children, [env.pieces]);
   assert.ok(env.squares.every(cell => cell.children.length === 0));
   assert.equal(env.timers.size, 0);
+});
+
+test('the 3D scene replaces the flat board effect, stops on cancel, and falls back when it cannot start', () => {
+  const calls = [];
+  const env = setup(false, { start: (options) => { calls.push(options); return () => { options.stopped = true; }; } });
+  assert.equal(env.api.play({ badge: env.badge, board: env.board, square: 'e4', piece: env.piece }), true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].square, 'e4');
+  assert.deepEqual(env.board.children, [env.pieces], 'no flat decorations while the 3D scene runs');
+  assert.ok(env.squares.every(cell => cell.children.length === 0));
+  calls[0].onFail(new Error('WebGL unavailable'));
+  assert.equal(env.board.children[0].className, 'brilliant-effects', 'a failed 3D start plays the flat effect instead');
+  assert.equal(env.animations.filter(animation => animation.element.className === 'brilliant-wave-cell').length, 64);
+  env.api.cancel();
+  assert.equal(calls[0].stopped, true);
+  assert.deepEqual(env.board.children, [env.pieces]);
+  env.api.play({ badge: env.badge, board: env.board, square: 'e4' });
+  calls[1].onDone();
+  assert.equal(calls[1].stopped, true, 'the scene ending clears the run');
+  assert.equal(env.timers.size, 0);
+  assert.equal(env.api.play({ badge: env.badge }), true);
+  assert.equal(calls.length, 2, 'a badge-only preview never starts the 3D scene');
+  env.api.cancel();
 });
