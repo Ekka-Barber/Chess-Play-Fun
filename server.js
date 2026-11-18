@@ -249,9 +249,9 @@ async function reviewMove(ply,pre,post,ticket) {
   const selected=pickEngines(currentEngine()).analysis;
   let source=ticket===undefined?reviewEngine:engine, sourceName=selected.name, sourceId=selected.id;
   // MCTS depth cannot satisfy alpha-beta confidence gates; retain its actual depth only as evidence.
-  const assess=(before,after)=>({...assessMove({beforeFen,afterFen,move:moveLog[ply],pre:sourceId==='lc0'?{...before,depth:0}:before,
+  const assess=(before,after,accepted)=>({...assessMove({beforeFen,afterFen,move:moveLog[ply],pre:sourceId==='lc0'?{...before,depth:0}:before,
     post:after.lines.length?after:{...after,lines:[{whiteCp:after.terminalCp,pv:[],sanLine:[],mate:Boolean(after.terminalCp)}]},
-    book:isBook(ply),opening:openingName(ply+1),variant:settings.variant}),depth:Math.min(before.depth||0,after.depth||0),engine:sourceName});
+    accepted,book:isBook(ply),opening:openingName(ply+1),variant:settings.variant}),depth:Math.min(before.depth||0,after.depth||0),engine:sourceName});
   const search=async(index,multipv,searchmoves)=>{
     const fen=fens[index], run=()=>source.go(fen,multipv,GRADE.ms,optionsFor(index,{depth:GRADE.depth,...(searchmoves?{searchmoves}:{})}));
     const raw=source===engine?await run():await source.exec(run);
@@ -280,28 +280,40 @@ async function reviewMove(ply,pre,post,ticket) {
       pre=deepPre;post=deepPost;annotation=assess(pre,post);
     }
   }
-  if(annotation.type==='brilliant') {
-    const capture=annotation.sacrifice.captureUci;
-    let accepted=post.lines.find(line=>line.uci===capture);
-    if(!accepted) {
-      try {
-        const report=await search(ply+1,1,[capture]);if(!report)return;
-        accepted=report.lines.find(line=>line.uci===capture);
-      } catch(error) {
-        if(stale() || error?.code===SEARCH_CANCELLED)return;
-        annotation.sacrifice.lineError='The acceptance line could not be loaded. Try deep review again.';
+  // A sacrifice candidate is judged on the line where the offer is taken: search that capture, and lengthen a
+  // principal variation too short to show whether the material comes straight back. A failed search leaves the
+  // ordinary grade in place.
+  let accepted;
+  if(annotation.needsAcceptance) {
+    const capture=annotation.needsAcceptance, variant=settings.variant;
+    try {
+      let line=post.lines.find(entry=>entry.uci===capture);
+      if(!line){const report=await search(ply+1,1,[capture]);if(!report)return;line=report.lines.find(entry=>entry.uci===capture);}
+      if(line) {
+        let fen=afterFen, moves=line.pv.slice(0,5);
+        for(const uci of moves)fen=rules.apply(fen,rules.parseUciMove(fen,uci,variant),variant).fen;
+        for(let tries=0;moves.length<5 && tries<4 && rules.legalMoves(fen,variant).length;tries++) {
+          const from=fen, run=()=>source.go(from,1,1500,{chess960:is960(),depth:12});
+          const raw=source===engine?await run():await source.exec(run);
+          if(stale())return;
+          const more=(raw.lines[0]?.pv||[]).slice(0,5-moves.length);if(!more.length)break;
+          for(const uci of more)fen=rules.apply(fen,rules.parseUciMove(fen,uci,variant),variant).fen;
+          moves=[...moves,...more];
+        }
+        accepted=moves.length>line.pv.length?{...line,pv:moves}:line;
+        annotation=assess(pre,post,accepted);
       }
-    }
-    if(accepted) {
-      annotation.sacrifice.continuation=hint({fen:afterFen,line:accepted,variant:settings.variant}).continuation;
-      annotation.sacrifice.depth=accepted.depth || post.depth;
-      annotation.sacrifice.whiteCp=accepted.whiteCp;
-      const steps=annotation.sacrifice.continuation;
-      annotation.sacrifice.outcome=Math.abs(accepted.whiteCp)>=90000 && accepted.whiteCp*(moveLog[ply].color==='w'?1:-1)>0
-        ? 'Accepting this sacrifice allows a forced checkmate.'
-        : steps[1] ? `After ${steps[0].san}, ${steps[1].explanation}` : 'Follow the acceptance line to see the engine’s response.';
-      annotation.explanation+=` ${annotation.sacrifice.outcome}`;
-    }
+    } catch(error) { if(stale() || error?.code===SEARCH_CANCELLED)return; }
+  }
+  if(annotation.type==='brilliant') {
+    annotation.sacrifice.continuation=hint({fen:afterFen,line:accepted,variant:settings.variant}).continuation;
+    annotation.sacrifice.depth=accepted.depth || post.depth;
+    annotation.sacrifice.whiteCp=accepted.whiteCp;
+    const steps=annotation.sacrifice.continuation;
+    annotation.sacrifice.outcome=Math.abs(accepted.whiteCp)>=90000 && accepted.whiteCp*(moveLog[ply].color==='w'?1:-1)>0
+      ? 'Accepting this sacrifice allows a forced checkmate.'
+      : steps[1] ? `After ${steps[0].san}, ${steps[1].explanation}` : 'Follow the acceptance line to see the engine’s response.';
+    annotation.explanation+=` ${annotation.sacrifice.outcome}`;
   }
   if(stale())return;
   annotations[ply]=annotation;
@@ -483,9 +495,13 @@ function retireAll() {
   // a changed game means fresh positions, and ucinewgame clears each engine's tables without a ~200 ms respawn.
   sweepTicket++;for(const coach of coachEngines){coach.interrupt();coach.newGame();}
   sweep={phase:'idle',results:[]};sweepCache=new Map();
-  engine.retire();playingEngine.retire();reviewEngine.retire();
   const picks=pickEngines(currentEngine(),settings);
-  engine.setExe(picks.analysis.path);reviewEngine.setExe(picks.analysis.path);playingEngine.setExe(picks.playing.path);
+  // Only a changed binary is respawned: a 100 MB engine takes 1-2 s to start (far longer on a busy machine), so an
+  // unchanged process is stopped and told ucinewgame instead, exactly like the coach pool above.
+  for(const [process,exe] of [[engine,picks.analysis.path],[reviewEngine,picks.analysis.path],[playingEngine,picks.playing.path]]) {
+    if(process.exe===exe){process.interrupt();process.exec(()=>process.newGame()).catch(()=>{});}
+    else{process.retire();process.setExe(exe);}
+  }
   engineNotices=picks.notices;
   scheduleAnalysis(tailPly());scheduleComputer();
 }
@@ -502,15 +518,24 @@ app.use(express.static(path.join(__dirname,'public')));
 const route=(handler)=>(req,res,next)=>Promise.resolve().then(()=>handler(req,res)).catch(next);
 function expectRevision(value){if(value!==undefined && value!==revision)throw Object.assign(new Error('The board changed. Try again from the refreshed position.'),{status:409});}
 app.get('/api/state',(req,res)=>res.json(gameInfo()));
+// The game is nearly all of the poll payload and rarely changes between polls, so a client that names the copy it
+// holds (have=<gameSeq>) gets the game again only when it differs. Seeded from the clock: a restart never reuses a token.
+let gameJson='', gameSeq=Date.now();
 app.get('/api/analysis',(req,res)=>{
   prunePausedTabs();
   const {tab,visible}=req.query;
   if(typeof tab==='string' && tab && tab.length<=128){
-    if(visible==='true')analysisTabs.set(tab,{hidden:false,seen:Date.now()});
+    if(visible==='true'){
+      analysisTabs.set(tab,{hidden:false,seen:Date.now()});
+      // Only the engines a watched board needs stay warm; the review and comparison engines still quit when idle.
+      engine.warm();if(computerColor())playingEngine.warm();
+    }
     else if(analysisTabs.has(tab))analysisTabs.get(tab).seen=Date.now();
   }
   if(analysis.phase==='paused'&&!analysisPaused())scheduleAnalysis(tailPly());
-  res.json({...analysis,sweep:{...sweep},game:gameInfo()});
+  const game=gameInfo(), json=JSON.stringify(game);
+  if(json!==gameJson){gameJson=json;gameSeq++;}
+  res.json({...analysis,sweep:{...sweep},gameSeq,...(req.query.have===String(gameSeq)?{}:{game})});
 });
 app.get('/api/engines',(req,res)=>res.json({engines:ENGINES.map(({id,name,chess960,elo,multipv})=>({id,name,chess960,elo,multipv})),defaultId:ENGINES[0].id}));
 app.get('/api/pgn',(req,res)=>res.type('application/x-chess-pgn').attachment('chess-game.pgn').send(rules.pgn(fens[0],moveLog,settings.variant)));

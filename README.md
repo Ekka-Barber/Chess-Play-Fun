@@ -5,7 +5,7 @@
 A local chess workbench for Windows. Play Standard or Chess960, compare engine moves, solve puzzles, and review mistakes with explanations and retry drills. Candidate moves appear while the engines search on your computer. Optional Lichess features stay off until you enable them.
 
 [![CI](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml/badge.svg)](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml)
-![158 tests](https://img.shields.io/badge/tests-158-407548)
+![161 tests](https://img.shields.io/badge/tests-161-407548)
 ![Windows x64](https://img.shields.io/badge/platform-Windows_x64-625846)
 [![MIT license](https://img.shields.io/badge/code-MIT-625846)](LICENSE)
 
@@ -20,8 +20,11 @@ The latest tagged release is [v4.0.2](https://github.com/Ekka-Barber/Chess-Play-
 - **Smarter Brilliant review.** Better sacrifice detection, deeper confirmation, and clearer explanations.
 - **Study and celebrate.** Explore replies and sacrifice acceptance on a separate board, with a new teal celebration and reduced-motion support. Saved moves retain their study lines.
 - **Lighter installation.** Removed the duplicate chess.js dependency, reducing installed file size by 8.47%.
+- **Stricter Brilliant.** A sacrifice must keep its material given up for five plies or end in mate. Trades, fork tricks, desperados, moves made in check, and sacrifices in an already won position no longer earn the badge.
+- **Faster long games.** Polls no longer re-parse or re-send the whole game, a new game keeps the running engine, and stepping through a reviewed game is quicker. See [Measured performance](#measured-performance).
+- **Engines that recover and stay ready.** A stalled engine start no longer needs Retry, and the engine for a visible board no longer quits after five idle minutes.
 
-Verified with **158 passing tests**, the build gate, and desktop/mobile browser checks. Details: [Brilliant review](design-plans/brilliant-review.md) · [Dependency audit](design-plans/dependency-audit.md).
+Verified with **161 passing tests**, the build gate, and desktop browser checks of the changed paths. Details: [Brilliant review](design-plans/brilliant-review.md) · [Dependency audit](design-plans/dependency-audit.md).
 
 ## Run locally
 
@@ -102,7 +105,7 @@ Open **Review** for side-by-side accuracy, the winning-chances graph, and key mo
 
 **Deep review** uses a separate engine process with a depth-20 target and a 20-second cap per position. You can browse the board while it runs. Move labels use this app's own grading heuristics and can change as analysis deepens.
 
-Brilliant recognizes sound, voluntary piece sacrifices and requests deeper confirmation when needed. Leela candidates receive independent Stockfish confirmation. **If they take**, **Explore the reply**, and **Compare** open a separate study board without changing your game. These are local assessments, so labels can differ from other apps.
+Brilliant recognizes sound, voluntary piece sacrifices and requests deeper confirmation when needed. The material must stay given up: a piece won straight back within two moves is a tactic, not a Brilliant. Moves made in check, in an already won position, or in a level position where another move does as well are not Brilliant either. Nor is a desperado, where the piece was lost whatever was played. Leela candidates receive independent Stockfish confirmation. **If they take**, **Explore the reply**, and **Compare** open a separate study board without changing your game. These are local assessments, so labels can differ from other apps.
 
 ### Keep your Brilliant moves
 
@@ -112,7 +115,7 @@ A verified player sacrifice classified as Brilliant is automatically saved under
 - The game PGN.
 - Metadata, the explanation, engine attribution, legal study lines, and the position before the move.
 
-Open **Brilliants** to download an image or PGN, or use **Study** to restore the saved game. Engine moves are not collected as the player's finds.
+Open **Brilliants** to download an image or PGN, or use **Study** to restore the saved game. Engine moves are not collected as the player's finds. Moves saved under an earlier rule stay in the folder until you remove them; the stricter rule only decides what is saved from now on.
 
 ## Choose your engine
 
@@ -145,6 +148,18 @@ These are local measurements in Balanced mode with two engine threads. Position,
 Suggestions now stream during search, before historical grading completes. An early preview can be shallow; only completed searches enter the cache used for grading, hints, and retry judging. The configured search budgets and rating limits were preserved.
 
 [Read the full audit](AUDIT-V4.md) for the measurement conditions, individual engine timings, regression cases, and verification limits.
+
+A second pass on 18 November 2026 measured a 119-ply game with Stockfish 19 in Balanced mode, on a laptop that other programs kept busy during some runs.
+
+| Task | Before | After |
+| --- | ---: | ---: |
+| Server time in the repetition check, same replay and review | 19.2 s | 0.2 s |
+| Size of an unchanged poll, fully reviewed game | 323 KB | 1.5 KB |
+| Data sent while reviewing the game | 140 MB | 21 MB |
+| One step through the reviewed game, script plus layout | 11.8 ms | 6.7 ms |
+| First analysis line after New game with a running engine | 1.2-2.0 s | 85-93 ms |
+
+The engine for a visible board now stays loaded, so the first move after a long pause no longer waits for an engine start (0.4 s measured on a quiet machine, 1.4-3.6 s on a busy one). The cost is one idle Stockfish process in memory, about 280-390 MB at the Balanced hash size. It quits five minutes after the board tab is hidden or closed.
 
 ### Keep chess work within a budget
 
@@ -219,7 +234,7 @@ npm test
 npm run build
 ```
 
-The local audit passed **158 tests**. The build gate checks JavaScript syntax and local page assets; source is still served directly. Tests stub the engine boundary and run without downloading the binaries; the alternate-engine switch case skips when no second engine is installed. Frozen real-engine snapshots also cover direct, indirect, voluntary, and unsound sacrifices. [GitHub Actions](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml) runs the suite on Node 20 and 22. The Chromium harness also accepts a debugging port and an explicit disposable app URL: `node test/browser.cjs <debug-port> http://127.0.0.1:4660/`. It replaces that server's game while testing.
+The local audit passed **161 tests**. The build gate checks JavaScript syntax and local page assets; source is still served directly. Tests stub the engine boundary and run without downloading the binaries; the alternate-engine switch case skips when no second engine is installed. Frozen real-engine snapshots also cover direct, indirect, voluntary, and unsound sacrifices. [GitHub Actions](https://github.com/Ekka-Barber/Chess-Play-Fun/actions/workflows/ci.yml) runs the suite on Node 20 and 22. The Chromium harness also accepts a debugging port and an explicit disposable app URL: `node test/browser.cjs <debug-port> http://127.0.0.1:4660/`. It replaces that server's game while testing.
 
 Production dependencies remain chessops, Express, and resvg. See the [dependency audit](design-plans/dependency-audit.md) for the cleanup and size measurements.
 

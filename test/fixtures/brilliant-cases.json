@@ -1,0 +1,791 @@
+[
+ {
+  "name": "Ka1 (0bc7e30a, ply 65)",
+  "why": "in check, bishop was already hanging, position already won",
+  "brilliant": false,
+  "fen": "5k2/p5b1/1p1p1P2/r3p1P1/1r4B1/2N5/P6Q/1K5R w - - 1 33",
+  "uci": "b1a1",
+  "depth": 16,
+  "pre": [
+   [
+    "b1a1",
+    100000
+   ],
+   [
+    "b1c1",
+    100000
+   ],
+   [
+    "b1c2",
+    100000
+   ]
+  ],
+  "post": [
+   [
+    "a5a2 c3a2 b4g4 f6g7 f8g7 h2h6",
+    100000
+   ],
+   [
+    "b4g4 f6g7 f8e7 g7g8q g4h4 h2h4",
+    100000
+   ],
+   [
+    "b4b1 a1b1 a5b5 c3b5 a7a5 f6g7",
+    100000
+   ]
+  ],
+  "accepted": [
+   "b4g4 f6g7 f8e7 g7g8q g4h4 h2h4",
+   100000
+  ]
+ },
+ {
+  "name": "Ke8 (0c1de9ea, ply 76)",
+  "why": "king steps out of check; the hanging bishop is incidental",
+  "brilliant": false,
+  "fen": "7r/3k1p2/1p2p3/p3P3/P2Q3b/1P1p1N2/4q1P1/7K b - - 1 38",
+  "uci": "d7e8",
+  "depth": 16,
+  "pre": [
+   [
+    "d7e8",
+    -100000
+   ],
+   [
+    "d7e7",
+    -100000
+   ],
+   [
+    "d7c8",
+    -100000
+   ]
+  ],
+  "post": [
+   [
+    "f3h4 e2e1 h1h2 h8h4 d4h4 e1h4",
+    -100000
+   ],
+   [
+    "d4h4 h8h4 f3h4 e2e1 h1h2 e1h4",
+    -100000
+   ],
+   [
+    "h1h2 h4f2 d4h4 f2h4 f3g5 h4f2",
+    -100000
+   ]
+  ],
+  "accepted": [
+   "f3h4 e2e1 h1h2 h8h4 d4h4 e1h4",
+   -100000
+  ]
+ },
+ {
+  "name": "Qe2 (15c8b114, ply 41)",
+  "why": "rook left en prise for the third move running; it comes straight back",
+  "brilliant": false,
+  "fen": "r1br2k1/1p4pp/3qp3/p2pN3/4RP2/P5P1/1PPQ3P/2KR4 w - - 0 21",
+  "uci": "d2e2",
+  "depth": 16,
+  "pre": [
+   [
+    "d2e2",
+    227
+   ],
+   [
+    "e4e3",
+    202
+   ],
+   [
+    "d2d3",
+    195
+   ]
+  ],
+  "post": [
+   [
+    "b7b6 e4e3 c8a6 e2h5 d8f8 e5f3",
+    259
+   ],
+   [
+    "a8b8 e2b5 b7b6 e4e3 b8b7 c1b1",
+    268
+   ],
+   [
+    "d8f8 e2b5 b7b6 e4e3 d6c5 e3b3",
+    278
+   ]
+  ],
+  "accepted": [
+   "d5e4 d1d6 d8d6 e2h5 c8d7 h5f7",
+   505
+  ]
+ },
+ {
+  "name": "Nc3 (34c52bd6, ply 9)",
+  "why": "counter-attack on the queen: taking the knight loses the queen at once",
+  "brilliant": false,
+  "fen": "rnb1kbnr/ppp2ppp/8/3q4/4p3/5NP1/PP1PPP1P/RNBQKB1R w KQkq - 0 5",
+  "uci": "b1c3",
+  "depth": 16,
+  "pre": [
+   [
+    "b1c3",
+    99
+   ],
+   [
+    "f3h4",
+    7
+   ],
+   [
+    "f3g1",
+    -55
+   ]
+  ],
+  "post": [
+   [
+    "d5c6 f3e5 c6e6 d2d4 f7f6 h2h4",
+    104
+   ],
+   [
+    "d5h5 c3e4 f8e7 f1g2 g8f6 e4f6",
+    206
+   ],
+   [
+    "d5f5 d1a4 c8d7 a4e4 f5e4 c3e4",
+    207
+   ]
+  ],
+  "accepted": [
+   "e4f3 c3d5 f8d6 e2f3 g8e7 d5e3",
+   817
+  ]
+ },
+ {
+  "name": "Nxe5 (70771aa2, ply 11)",
+  "why": "Berlin 6.Nxe5: the b5 bishop cannot be taken, book tactic saved six times",
+  "brilliant": false,
+  "fen": "r1bqkb1r/pppp1ppp/2nn4/1B2p3/8/5N2/PPPP1PPP/RNBQR1K1 w kq - 2 6",
+  "uci": "f3e5",
+  "depth": 16,
+  "pre": [
+   [
+    "f3e5",
+    23
+   ],
+   [
+    "a2a4",
+    12
+   ],
+   [
+    "b5a4",
+    9
+   ]
+  ],
+  "post": [
+   [
+    "f8e7 b5f1 c6e5 e1e5 e8g8 d2d4",
+    17
+   ],
+   [
+    "c6e5 e1e5 f8e7 b5f1 e8g8 d2d4",
+    22
+   ],
+   [
+    "c6e7 d1f3 f7f6 f3h5 g7g6 e5g6",
+    323
+   ]
+  ],
+  "accepted": [
+   "d6b5 e5c6 f8e7 c6d8 e8d8 d1e2",
+   944
+  ]
+ },
+ {
+  "name": "Nxe4 (0d24e3fd, ply 10)",
+  "why": "fork trick: the knight is regained by ...d5 within two moves",
+  "brilliant": false,
+  "fen": "r1bqkb1r/pp1p1ppp/2n1pn2/2p5/2B1P3/2N2N2/PPPP1PPP/R1BQ1RK1 b kq - 3 5",
+  "uci": "f6e4",
+  "depth": 16,
+  "pre": [
+   [
+    "f6e4",
+    -20
+   ],
+   [
+    "d7d5",
+    4
+   ],
+   [
+    "d7d6",
+    9
+   ]
+  ],
+  "post": [
+   [
+    "c3e4 d7d5 c4b5 d5e4 f3e5 d8d6",
+    -26
+   ],
+   [
+    "d2d4 e4c3 b2c3 d7d5 c4b5 f8d6",
+    -117
+   ],
+   [
+    "f1e1 e4c3 d2c3 f8e7 c1f4 d7d5",
+    -145
+   ]
+  ],
+  "accepted": [
+   "c3e4 d7d5 c4b5 d5e4 f3e5 d8d6",
+   -26
+  ]
+ },
+ {
+  "name": "Bxg5 (4fdfce3d, ply 82)",
+  "why": "dead-drawn ending where every move holds; the sacrifice is not needed",
+  "brilliant": false,
+  "fen": "8/p3b3/4k1K1/1pp3P1/8/1P2N3/P7/8 b - - 3 41",
+  "uci": "e7g5",
+  "depth": 16,
+  "pre": [
+   [
+    "e6e5",
+    -9
+   ],
+   [
+    "a7a6",
+    -7
+   ],
+   [
+    "e7g5",
+    -1
+   ]
+  ],
+  "post": [
+   [
+    "g6g5 e6e5 e3g4 e5d4 g5f4 c5c4",
+    -20
+   ],
+   [
+    "e3d1 g5d2 g6h5 e6f5 h5h4 f5e4",
+    -540
+   ],
+   [
+    "e3g2 g5d2 g6h5 e6e5 h5g4 e5e4",
+    -571
+   ]
+  ],
+  "accepted": [
+   "g6g5 e6e5 e3g4 e5d4 g5f4 c5c4",
+   -20
+  ]
+ },
+ {
+  "name": "Rg5 (5d793b17, ply 100)",
+  "why": "drawn ending, third-choice move, knight for pawn changes nothing",
+  "brilliant": false,
+  "fen": "5k2/1R6/8/p2r4/8/2NnK1P1/8/8 b - - 7 50",
+  "uci": "d5g5",
+  "depth": 16,
+  "pre": [
+   [
+    "d5g5",
+    0
+   ],
+   [
+    "d5d8",
+    1
+   ],
+   [
+    "d5d6",
+    1
+   ]
+  ],
+  "post": [
+   [
+    "e3d3 g5g3 d3d2 g3g2 d2e1 g2g1",
+    10
+   ],
+   [
+    "b7b8 f8f7 e3d3 g5g3 d3c2 g3g2",
+    8
+   ],
+   [
+    "g3g4 d3c5 b7c7 a5a4 e3f3 c5e6",
+    4
+   ]
+  ],
+  "accepted": [
+   "e3d3 g5g3 d3d2 g3g2 d2e1 g2g1",
+   10
+  ]
+ },
+ {
+  "name": "Nc5 (8b07ecc0, ply 35)",
+  "why": "a queen trade counted as a queen sacrifice",
+  "brilliant": false,
+  "fen": "3rk2r/pp2bpp1/2n4p/3Qp3/q7/PN2B1P1/1P2PP1P/R1R3K1 w k - 3 18",
+  "uci": "b3c5",
+  "depth": 16,
+  "pre": [
+   [
+    "b3c5",
+    2
+   ],
+   [
+    "d5c4",
+    -11
+   ],
+   [
+    "d5f3",
+    -622
+   ]
+  ],
+  "post": [
+   [
+    "d8d5 c5a4 f7f5 a4c5 e7c5 c1c5",
+    -2
+   ],
+   [
+    "e7c5 d5c5 a4b3 a3a4 a7a6 a1a3",
+    40
+   ],
+   [
+    "a4g4 d5b3 e8g8 b3b7 e7c5 c1c5",
+    81
+   ]
+  ],
+  "accepted": [
+   "d8d5 c5a4 f7f5 a4c5 e7c5 c1c5",
+   -2
+  ]
+ },
+ {
+  "name": "Qg6 (9ca7cdcd, ply 47)",
+  "why": "already mating; the rook cannot be taken because of mate in one",
+  "brilliant": false,
+  "fen": "3r1k1r/1b4p1/p2b1n1p/1p3R2/4R3/1B4Q1/PP3PPP/6K1 w - - 1 24",
+  "uci": "g3g6",
+  "depth": 16,
+  "pre": [
+   [
+    "g3g6",
+    100000
+   ],
+   [
+    "f5f6",
+    100000
+   ],
+   [
+    "g3f3",
+    1007
+   ]
+  ],
+  "post": [
+   [
+    "b7d5 b3d5 d6h2 g1h2 d8d5 e4e8",
+    100000
+   ],
+   [
+    "d6h2 g1h2 b7d5 b3d5 d8d5 e4e8",
+    100000
+   ],
+   [
+    "b7c6 g6f7",
+    100000
+   ]
+  ],
+  "accepted": [
+   "b7e4 g6f7",
+   100000
+  ]
+ },
+ {
+  "name": "Bxf2+ (ec8eff02, ply 10)",
+  "why": "Bxf2+ regains the bishop two moves later",
+  "brilliant": false,
+  "fen": "rnbqk2r/pp1p1ppp/2p2n2/2b1p1B1/2P5/3P2P1/PP2PPBP/RN1QK1NR b KQkq - 2 5",
+  "uci": "c5f2",
+  "depth": 16,
+  "pre": [
+   [
+    "c5f2",
+    -267
+   ],
+   [
+    "c5d4",
+    -78
+   ],
+   [
+    "d8b6",
+    -47
+   ]
+  ],
+  "post": [
+   [
+    "e1f2 f6g4 f2e1 d8g5 d1d2 g5e3",
+    -264
+   ],
+   [
+    "e1f1 h7h6 g5f6 d8f6 g1f3 f2e3",
+    -347
+   ],
+   [
+    "e1d2 f6e4 d3e4 d8g5 d2c2 g5e7",
+    -385
+   ]
+  ],
+  "accepted": [
+   "e1f2 f6g4 f2e1 d8g5 d1d2 g5e3",
+   -264
+  ]
+ },
+ {
+  "name": "Nxf7 (5f8193a8, ply 23)",
+  "why": "Nxf7 Rxf7 Bxd5: the piece comes straight back with a pin",
+  "brilliant": false,
+  "fen": "rnbq1rk1/1p2bppp/p7/3np1N1/8/1P4P1/P3PPBP/RNBQ1RK1 w - - 0 12",
+  "uci": "g5f7",
+  "depth": 16,
+  "pre": [
+   [
+    "g5f7",
+    450
+   ],
+   [
+    "g5h7",
+    142
+   ],
+   [
+    "d1d5",
+    138
+   ]
+  ],
+  "post": [
+   [
+    "g8f7 g2d5 f7e8 e2e4 d8b6 b1d2",
+    429
+   ],
+   [
+    "f8f7 g2d5 d8e8 c1a3 b8c6 d5f7",
+    468
+   ],
+   [
+    "d8e8 f7d6 e7d6 d1d5 e8e6 d5e6",
+    521
+   ]
+  ],
+  "accepted": [
+   "f8f7 g2d5 d8e8 c1a3 b8c6 d5f7",
+   468
+  ]
+ },
+ {
+  "name": "Rxe3 (7a1d6b7a, ply 18)",
+  "why": "exchange sacrifice for a lasting attack, engine first choice",
+  "brilliant": true,
+  "fen": "r1bqr1k1/pppn1ppp/3b1n2/3p2P1/3P4/2N1BN1P/PP2PP2/R2QKB1R b KQ - 0 9",
+  "uci": "e8e3",
+  "depth": 15,
+  "pre": [
+   [
+    "e8e3",
+    -292
+   ],
+   [
+    "f6e4",
+    -207
+   ],
+   [
+    "f6h5",
+    -191
+   ]
+  ],
+  "post": [
+   [
+    "g5f6 e3f3 e2f3 d7f6 h3h4 f6h5",
+    -295
+   ],
+   [
+    "f2e3 d6g3 e1d2 f6e4 c3e4 d5e4",
+    -351
+   ],
+   [
+    "f1g2 e3c3 b2c3 f6e4 h3h4 d7b6",
+    -685
+   ]
+  ],
+  "accepted": [
+   "f2e3 d6g3 e1d2 f6e4 c3e4 d5e4",
+   -351
+  ]
+ },
+ {
+  "name": "Rxh2+ (6b461b38, ply 50)",
+  "why": "rook sacrifice that forces mate, but ...Qg4 already wins by four pawns: the game was won without it",
+  "brilliant": false,
+  "fen": "4r2r/pp4k1/6p1/2p3q1/2NPp3/6P1/PP1Nn1KP/R2Q1R2 b - - 0 25",
+  "uci": "h8h2",
+  "depth": 16,
+  "pre": [
+   [
+    "h8h2",
+    -100000
+   ],
+   [
+    "g5g4",
+    -397
+   ],
+   [
+    "e2d4",
+    0
+   ]
+  ],
+  "post": [
+   [
+    "g2h2 e8h8 h2g2 g5g3",
+    -100000
+   ]
+  ],
+  "accepted": [
+   "g2h2 e8h8 h2g2 g5g3",
+   -100000
+  ]
+ },
+ {
+  "name": "Nxc6 (6e9ef95c, ply 11)",
+  "why": "desperado: knight and bishop both hang, so a piece is lost whatever White plays (depth 24, 2026-11-18)",
+  "brilliant": false,
+  "fen": "r1bqkb1r/pp1p1ppp/2p2n2/1B2p3/3NP3/3P4/PPP2PPP/RNBQK2R w KQkq - 0 6",
+  "uci": "d4c6",
+  "depth": 24,
+  "pre": [
+   [
+    "d4c6",
+    150
+   ],
+   [
+    "b5c6",
+    114
+   ],
+   [
+    "d4f3",
+    92
+   ]
+  ],
+  "post": [
+   [
+    "b7c6 b5a4 f8c5 e1g1 a8b8 b1c3",
+    148
+   ],
+   [
+    "d7c6 b5c4 b7b5 c4b3 f8b4 c1d2",
+    159
+   ],
+   [
+    "d8b6 c6a7 b6a7 e1g1 f8c5 d1f3",
+    544
+   ]
+  ],
+  "accepted": [
+   "b7c6 b5a4 f8c5 e1g1 e8g8 b1c3",
+   153
+  ]
+ },
+ {
+  "name": "Rxf4 (68f5428a, ply 59)",
+  "why": "exchange sacrifice that is the only move to hold the balance",
+  "brilliant": true,
+  "fen": "r4r1k/1p3p1p/p1q2N2/4pR2/2P2nP1/P1Q4P/1P6/R5K1 w - - 1 30",
+  "uci": "f5f4",
+  "depth": 15,
+  "pre": [
+   [
+    "f5f4",
+    10
+   ],
+   [
+    "c3c2",
+    -126
+   ],
+   [
+    "c3d2",
+    -418
+   ]
+  ],
+  "post": [
+   [
+    "e5f4 a1e1 a8d8 c4c5 b7b6 b2b4",
+    20
+   ],
+   [
+    "a8d8 c3e5 c6d6 e5d6 d8d6 a1f1",
+    786
+   ],
+   [
+    "f8c8 c3e5 c6c5 e5c5 c8c5 a1f1",
+    792
+   ]
+  ],
+  "accepted": [
+   "e5f4 a1e1 a8d8 c4c5 b7b6 b2b4",
+   20
+  ]
+ },
+ {
+  "name": "Nxe5 (37a1608e, ply 5)",
+  "why": "Damiano defence 3.Nxe5: knight for a lasting attack",
+  "brilliant": true,
+  "fen": "rnbqkbnr/pppp2pp/5p2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 3",
+  "uci": "f3e5",
+  "depth": 15,
+  "pre": [
+   [
+    "f3e5",
+    199
+   ],
+   [
+    "f1c4",
+    184
+   ],
+   [
+    "d2d4",
+    155
+   ]
+  ],
+  "post": [
+   [
+    "d8e7 e5f3",
+    214
+   ],
+   [
+    "g8e7 e5f3 d7d5 e4d5 d8d5 c2c4",
+    239
+   ],
+   [
+    "g8h6 e5f3 d7d5 e4d5 d8d5 b1c3",
+    308
+   ]
+  ],
+  "accepted": [
+   "f6e5 d1h5 g7g6 h5e5 d8e7 e5h8",
+   452
+  ]
+ },
+ {
+  "name": "chess.com 141133647564 Qxh6",
+  "why": "wins a bishop; the rook left on h8 cannot be taken because Qxh8 runs into mate",
+  "brilliant": true,
+  "fen": "r1b1k1nr/ppp2pQp/2np1q1B/2b1p3/4P3/3P3N/PPP2PPP/RN2KB1R b KQkq - 2 6",
+  "uci": "f6h6",
+  "depth": 14,
+  "pre": [
+   [
+    "f6h6",
+    -722
+   ],
+   [
+    "c5b4",
+    -134
+   ],
+   [
+    "c8h3",
+    1
+   ]
+  ],
+  "post": [
+   [
+    "g7h6 g8h6 b1c3 e8d8 c3a4 c5b4",
+    -696
+   ],
+   [
+    "g7g5 c8h3 g5h6 g8h6 g2h3 c6d4",
+    -746
+   ],
+   [
+    "h3f4 h6g7 f4d5 c6b4 d5b4 c5b4",
+    -1033
+   ]
+  ],
+  "accepted": [
+   "g7h8 h6c1 e1e2 c6d4",
+   -100000
+  ]
+ },
+ {
+  "name": "chess.com 146561042352 Qxc5",
+  "why": "queen for rook, but the queen comes straight back with Rxd1+: a tactic, not a sacrifice",
+  "brilliant": false,
+  "fen": "3r1rk1/pp3ppp/1qp1pn2/2R2b2/3P4/PB3N1P/2P2PP1/R2Q2K1 b - - 0 17",
+  "uci": "b6c5",
+  "depth": 15,
+  "pre": [
+   [
+    "b6c5",
+    -395
+   ],
+   [
+    "d8d6",
+    -271
+   ],
+   [
+    "h7h6",
+    -267
+   ]
+  ],
+  "post": [
+   [
+    "d4c5 d8d1 a1d1 f6e4 g2g4 f5g6",
+    -417
+   ],
+   [
+    "g2g4 c5a5 g4f5 a5f5 g1g2 c6c5",
+    -761
+   ],
+   [
+    "c2c4 c5e7 d1e2 f5e4 c4c5 e4f3",
+    -859
+   ]
+  ],
+  "accepted": [
+   "d4c5 d8d1 a1d1 f6e4 g2g4 f5g6",
+   -417
+  ]
+ },
+ {
+  "name": "chess.com 122947746214 Nxc7+",
+  "why": "the knight is regained at once by Qxf6, and d3 was at least as good",
+  "brilliant": false,
+  "fen": "r2qk2r/2p2p1p/b1np1np1/1Nb1p3/p3P3/P4Q1P/BPPPNPP1/R1B1K2R w KQkq - 1 12",
+  "uci": "b5c7",
+  "depth": 14,
+  "pre": [
+   [
+    "d2d3",
+    453
+   ],
+   [
+    "b5c7",
+    422
+   ],
+   [
+    "d2d4",
+    237
+   ]
+  ],
+  "post": [
+   [
+    "d8c7 f3f6 e8g8 d2d3 c7d8 f6d8",
+    430
+   ],
+   [
+    "e8d7 c7a6 a8a6 c2c3 d8e7 e1g1",
+    619
+   ],
+   [
+    "e8f8 d2d3 d8c7 f3f6 h8g8 e2c3",
+    630
+   ]
+  ],
+  "accepted": null
+ }
+]

@@ -17,6 +17,7 @@
 /.impeccable/
 /.before-fix/
 /.zcode/
+/.dashboard/
 /graft/
 *.log
 .env

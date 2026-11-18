@@ -3,11 +3,23 @@ const assert = require("node:assert/strict");
 const rules = require("../lib/rules");
 const { assessMove, hint, expectedPoints } = require("../lib/tutor");
 
-function review(fen, uci, { best = uci, beforeCp = 0, afterCp = 0, reply, depth = 16, alternatives = [], book = false, opening } = {}) {
+// needed: adds a clearly worse searched alternative, so a level-position sacrifice counts as necessary.
+// acceptedPv: the line where the offer is taken; by default the capture followed by quiet moves, so the material stays given up.
+function review(fen, uci, { best = uci, beforeCp = 0, afterCp = 0, reply, depth = 16, alternatives = [], book = false, opening, needed = false, acceptedPv } = {}) {
   const played = rules.apply(fen, rules.parseUciMove(fen, uci));
-  return assessMove({ beforeFen: fen, afterFen: played.fen, move: played.move,
-    pre: { depth, lines: [{ uci: best, whiteCp: beforeCp }, ...alternatives] },
-    post: { depth, lines: [{ uci: reply || rules.legalMoves(played.fen)[0]?.uci, whiteCp: afterCp }] }, book, opening });
+  const worse = needed ? [{ uci: rules.legalMoves(fen).find((move) => move.uci !== uci).uci, whiteCp: beforeCp + (played.move.color === "w" ? -150 : 150) }] : [];
+  const input = { beforeFen: fen, afterFen: played.fen, move: played.move,
+    pre: { depth, lines: [{ uci: best, whiteCp: beforeCp }, ...alternatives, ...worse] },
+    post: { depth, lines: [{ uci: reply || rules.legalMoves(played.fen)[0]?.uci, whiteCp: afterCp }] }, book, opening };
+  const result = assessMove(input);
+  if (!result.needsAcceptance) return result;
+  const line = [result.needsAcceptance];
+  for (let position = rules.apply(played.fen, rules.parseUciMove(played.fen, line[0])).fen; line.length < 5;) {
+    const quiet = rules.legalMoves(position).map((move) => rules.apply(position, move)).find((next) => !next.move.captured);
+    if (!quiet) break;
+    line.push(quiet.move.uci); position = quiet.fen;
+  }
+  return assessMove({ ...input, accepted: { pv: acceptedPv || line, whiteCp: afterCp } });
 }
 
 const cpForPoints = (points) => Math.log(points / (1 - points)) / 0.00368208;
@@ -27,7 +39,7 @@ test("expected-points loss uses all five ordinary grading bands", () => {
     assert.equal(result.type, type);
     assert.ok(Math.abs(result.lossPoints - loss) < 1e-12);
     assert.equal(result.betterSan, "d4");
-    assert.equal(result.rule, "local-v2");
+    assert.equal(result.rule, "local-v3");
   }
 });
 
@@ -97,7 +109,7 @@ test("blunder explanation uses the actual legal searched reply and better move",
 });
 
 test("Brilliant recognizes a newly offered bishop with a verified material concession", () => {
-  const result = review(gift, "d3h7", { beforeCp: 30, afterCp: 25, reply: "g8h7" });
+  const result = review(gift, "d3h7", { beforeCp: 30, afterCp: 25, reply: "g8h7", needed: true });
   assert.equal(result.type, "brilliant");
   assert.equal(result.sacrifice.piece, "b");
   assert.equal(result.sacrifice.square, "h7");
@@ -108,7 +120,7 @@ test("Brilliant recognizes a newly offered bishop with a verified material conce
 });
 
 test("Brilliant can recognize an unmoved queen exposed by moving a blocker", () => {
-  const result = review(legalMate, "f3e5", { beforeCp: 30, afterCp: 25, reply: "g4d1" });
+  const result = review(legalMate, "f3e5", { beforeCp: 30, afterCp: 25, reply: "g4d1", needed: true, acceptedPv: ["g4d1", "c4f7", "e8e7", "c3d5"] });
   assert.equal(result.type, "brilliant");
   assert.equal(result.sacrifice.piece, "q");
   assert.equal(result.sacrifice.square, "d1");
@@ -165,7 +177,7 @@ test("Brilliant accepts voluntary exchange sacrifices for either color", () => {
     ["6k1/8/8/8/1p6/2bR4/8/6K1 w - - 0 1", "d3c3", "b4c3"],
     ["6k1/8/2Br4/1P6/8/8/8/6K1 b - - 0 1", "d6c6", "b5c6"],
   ]) {
-    const result = review(fen, uci, { reply });
+    const result = review(fen, uci, { reply, needed: true });
     assert.equal(result.type, "brilliant");
     assert.equal(result.sacrifice.materialCost, 2);
   }
@@ -173,14 +185,14 @@ test("Brilliant accepts voluntary exchange sacrifices for either color", () => {
 
 test("an equal exchange available before the move does not make a defended piece already hanging", () => {
   const fen = "6k1/7p/8/4n3/8/3B4/8/3R2K1 w - - 0 1";
-  const result = review(fen, "d3h7", { reply: "g8h7" });
+  const result = review(fen, "d3h7", { reply: "g8h7", needed: true });
   assert.equal(result.type, "brilliant");
   assert.equal(result.sacrifice.piece, "b");
 });
 
 test("sacrifice material considers a recapture that would itself lose the queen", () => {
   const fen = "3r2k1/8/4p3/3p4/8/8/3R4/3Q2K1 w - - 0 1";
-  const result = review(fen, "d2d5", { reply: "d8d5" });
+  const result = review(fen, "d2d5", { reply: "d8d5", needed: true });
   assert.equal(result.type, "brilliant");
   assert.equal(result.sacrifice.materialCost, 4);
 });
@@ -190,13 +202,15 @@ test("a winning sacrifice is assessed against alternatives instead of its own wi
   assert.equal(review(gift, "d3h7", options).type, "brilliant");
   assert.notEqual(review(gift, "d3h7", { ...options, alternatives: [{ uci: "c1e3", whiteCp: 600 }] }).type, "brilliant");
   assert.notEqual(review(gift, "d3h7", { ...options, alternatives: [{ uci: "c1e8", whiteCp: 0 }] }).type, "brilliant");
-  const shallow = review(gift, "d3h7", { ...options, depth: 13 });
+  const shallow = review(gift, "d3h7", { ...options, beforeCp: 600, afterCp: 600, depth: 13 });
   assert.notEqual(shallow.type, "brilliant");
   assert.equal(shallow.needsDepth, 14);
+  // A forced mate stops the search at a low depth; it needs no deeper confirmation.
+  assert.equal(review(gift, "d3h7", { ...options, depth: 8 }).type, "brilliant");
 });
 
 test("a confirmed sacrifice can be Brilliant even when it is opening theory", () => {
-  assert.equal(review(gift, "d3h7", { book: true, reply: "g8h7" }).type, "brilliant");
+  assert.equal(review(gift, "d3h7", { book: true, reply: "g8h7", needed: true }).type, "brilliant");
 });
 
 test("a sacrifice underestimated by shallow analysis requests confirmation before rejecting it", () => {

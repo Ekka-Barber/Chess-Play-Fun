@@ -337,7 +337,7 @@ test('deep review searches every position at depth 20 on its own engine and re-g
     assert.equal(game.deep.active,false); assert.equal(game.deep.done,game.deep.total); assert.equal(game.deep.total,5);
     for (const fen of game.fens) assert.ok(calls.some((call) => call.fen === fen && call.depth === 20), fen);
     assert.ok(game.annotations.every((note) => note.type !== 'pending'));
-    assert.equal(game.annotations[0].rule,'local-v2', 'opening theory is also assessed for a sound sacrifice');
+    assert.equal(game.annotations[0].rule,'local-v3', 'opening theory is also assessed for a sound sacrifice');
     assert.equal(game.annotations[0].depth,12, 'report the achieved depth from the engine stub, not the requested target');
     assert.ok(game.evalHist.every(Number.isFinite));
   } finally { reviewEngine.go = go; }
@@ -374,4 +374,22 @@ test('cross-origin mutation is refused', async () => {
     request(`${origin}/api/state`,{headers:{Host:'untrusted.example'}},(response)=>{ response.resume();resolve(response.statusCode); }).on('error',reject).end();
   });
   assert.equal(rebinding,403);
+});
+
+test('the analysis poll sends the game only when the client copy is out of date', async () => {
+  await post('new', { mode: 'free', engineSide: null, variant: 'standard' });
+  await moves('e2e4');
+  await engine.chain;
+  const poll = (have) => fetch(`${origin}/api/analysis${have === undefined ? '' : `?have=${have}`}`).then((r) => r.json());
+  const first = await poll();
+  assert.equal(first.game.moveLog.length, 1, 'a client naming no copy always gets the game');
+  const same = await poll(first.gameSeq);
+  assert.equal(same.game, undefined, 'an unchanged game is left out');
+  assert.equal(same.gameSeq, first.gameSeq);
+  assert.equal(same.phase, 'ready', 'the analysis itself still arrives');
+  await moves('e7e5');
+  const changed = await poll(first.gameSeq);
+  assert.equal(changed.game.moveLog.length, 2, 'a changed game is sent again');
+  assert.notEqual(changed.gameSeq, first.gameSeq);
+  assert.equal((await poll('stale')).game.moveLog.length, 2, 'an unknown token gets the game');
 });

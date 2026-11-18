@@ -33,7 +33,7 @@ let game, analysis, viewIndex = 0, flipped = false, arrowMode = 'best', selected
 let lastAnimatedBrilliant = '';
 let lastCoachBrilliant = '', shownVariation = null;
 let busy = false, promoting = false, gesture = null, focusedSquare = 'e2';
-let pieces = new Map(), boardFen = '', panelFingerprint = '', pollTimer, analysisTimer, toastTimer, pauseTimer;
+let pieces = new Map(), boardFen = '', panelFingerprint = '', reviewPrint = '', printedGame = null, gamePrint = '', gameSeq, pollTimer, analysisTimer, toastTimer, pauseTimer;
 let online = true, polling = false, themeKey = 'classic', collection = null, seenArchive = null, restoreId = null, reviewOpenedFor = null;
 // The engine name follows the server's registry (/api/engines) and settings.engineId; the default is the built-in entry.
 let engineName = 'Stockfish 19', engineRegistry = null, pauseSent = false;
@@ -717,7 +717,12 @@ function renderPanels(force = false) {
   // sweep rebuilds once while progressive answers rebuild as each engine lands.
   const sweepPrint = sweepLive && [sweepLive.phase, sweepLive.terminal ?? null,
     sweepLive.results.map((r) => [r.engineId, r.uci ?? null, r.text ?? null, r.displayTo ?? null, r.skipped ?? null, r.error ?? null])];
-  const fingerprint = JSON.stringify([game.revision, game.annotations, game.evalHist, game.reviewAll, game.deep.active, game.deep.done, game.computer, viewIndex, livePrint, arrowMode, sweepPrint, online, hints.get(hintKey), revealed.has(hintKey), retry, activeMoment, bestShown, bothSides, solved.size, paused, engineName, s.powerMode, s.onlineFeatures, onlinePrint]);
+  // The Review panel is the costly part of a rebuild and, apart from its cursor line, does not depend on the
+  // position on show: it carries its own identity, so stepping through a graded game leaves it untouched.
+  // The game object is only replaced when the server sends a changed one, so its (large) part is serialized once.
+  if (game !== printedGame) { printedGame = game; gamePrint = JSON.stringify([game.id, game.revision, game.annotations, game.evalHist, game.reviewAll, game.deep, game.over, game.result]); }
+  const reviewKey = gamePrint + JSON.stringify([bot, retry, activeMoment, bestShown, bothSides, solved.size, engineName, bestShown === null ? null : hints.get(`${game.revision}:${bestShown}`)]);
+  const fingerprint = reviewKey + JSON.stringify([game.computer, viewIndex, livePrint, arrowMode, sweepPrint, online, hints.get(hintKey), revealed.has(hintKey), paused, s.powerMode, s.onlineFeatures, onlinePrint]);
   if (!force && fingerprint === panelFingerprint) return;
   panelFingerprint = fingerprint;
   const thinking = !paused && (!live || ['thinking', 'idle', 'threats'].includes(live.phase));
@@ -794,7 +799,9 @@ function renderPanels(force = false) {
   renderEngineBand(sweepLive);
   renderEngineVotes(sweepLive);
   renderCoach(hintKey);
-  renderMoves(); renderGraph(); renderReview();
+  renderMoves(); renderGraph();
+  if (force || reviewKey !== reviewPrint) { reviewPrint = reviewKey; renderReview(); }
+  else $('#reviewGraph .review-graph-now')?.setAttribute('d', `M${viewIndex / Math.max(1, last) * 300} 0V100`);
   // When a game ends the server starts its review; show it once per game.
   if (game.over && game.reviewAll && reviewOpenedFor !== game.id) { reviewOpenedFor = game.id; selectTab($('#tabReview')); }
 }
@@ -1659,13 +1666,16 @@ async function pollTick() {
   polling = true;
   const revision = game?.revision;
   try {
-    const data = await api(`analysis?tab=${encodeURIComponent(TAB_ID)}&visible=${!document.hidden}`);
+    // The game is nearly the whole payload; naming the copy held here lets the server leave it out while unchanged.
+    const data = await api(`analysis?tab=${encodeURIComponent(TAB_ID)}&visible=${!document.hidden}${game ? `&have=${gameSeq}` : ''}`);
     if (busy || gesture || promoting || game?.revision !== revision) return;
     online = true;
     const first = !game, wasTail = first || viewIndex === game.moveLog.length;
-    const changed = first || data.game.revision !== game.revision;
+    const next = data.game || game;
+    if (data.game) gameSeq = data.gameSeq;
+    const changed = first || next.revision !== game.revision;
     if (changed) pollKick = true; // an observed revision bump keeps the fast cadence for one more poll
-    const fresh = adoptGame(data.game); delete data.game; analysis = data;
+    const fresh = adoptGame(next); delete data.game; analysis = data;
     if (first && game.settings.theme !== themeKey) api('settings', { theme: themeKey }).catch(() => {});
     if (changed) {
       viewIndex = wasTail ? game.moveLog.length : Math.min(viewIndex, game.moveLog.length);

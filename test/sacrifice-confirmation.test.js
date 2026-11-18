@@ -22,9 +22,13 @@ for (const [index, source] of [engine, playingEngine, reviewEngine, ...coachEngi
   source.go = async (fen, multipv, ms, options = {}) => {
     if (index === 3 && failVerifier) throw new Error('Verifier unavailable');
     calls.push({ source: index, fen, options });
+    // Legal's trap: taking the queen is mated, and after Nxe5 White stands better than before the sacrifice.
+    if (options.searchmoves?.[0] === 'g4d1') return { depth: 16, nps: 100, best: 'g4d1',
+      lines: [{ score: { type: 'mate', value: -2 }, pv: ['g4d1', 'c4f7', 'e8e7', 'c3d5'] }] };
+    const afterTrap = fen.includes('/4N3/2B1P1b1/2N5/');
     const moves = options.searchmoves ? options.searchmoves.map(uci => rules.parseUciMove(fen, uci)) : rules.legalMoves(fen).slice(0, multipv);
     return { depth: index === 0 ? selectedDepth : 16, nps: 100, best: moves[0]?.uci,
-      lines: moves.map(move => ({ score: { type: 'cp', value: 0 }, pv: [move.uci || move.from + move.to] })) };
+      lines: moves.map(move => ({ score: { type: 'cp', value: afterTrap ? -150 : 0 }, pv: [move.uci || move.from + move.to] })) };
   };
 }
 archive.save = async () => ({ id: 'confirmation-test' });

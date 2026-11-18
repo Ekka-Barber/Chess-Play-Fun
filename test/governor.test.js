@@ -361,3 +361,20 @@ test('a visible poll heals a missed visibility message without erasing hidden ta
   await post('pause', { hidden: false, tab: 'hidden' });
   await post('pause', { hidden: false, tab: 'hidden', bye: 'yes' }, 400);
 });
+
+test('warm() keeps a watched engine: it postpones idle-quit and respawns a process that already quit', async () => {
+  const e = new Engine({ idleMs: 40 });
+  let starts = 0;
+  e.start = async () => { if (e.proc) return; starts++; const proc = uciProc(); e.proc = proc; e.buffer = ''; proc.stdout.on('data', (chunk) => e.feed(chunk)); };
+  await e.exec(() => e.start());
+  const first = e.proc;
+  for (let i = 0; i < 5; i++) { await delay(20); e.warm(); } // watched for 100 ms, well past the 40 ms idle limit
+  assert.equal(e.proc, first, 'a watched engine is not quit');
+  await delay(100);
+  assert.equal(e.proc, null, 'unwatched, it quits as before');
+  e.warm(); await e.chain;
+  assert.ok(e.proc && e.proc !== first, 'the next watch brings it back before any search');
+  assert.equal(starts, 2);
+  e.retire(); e.startFailed = true; e.warm(); await e.chain;
+  assert.equal(e.proc, null, 'a failed start is left to a real search or Retry, not respawned by a poll');
+});
